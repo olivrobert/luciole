@@ -1,0 +1,229 @@
+#!/usr/bin/env node
+'use strict'
+// rule-stats — what the constraint contracts have actually measured, projected from the
+// verification reports.
+//
+// Closes the loop: a report only ever lists violations, so "this rule has found nothing
+// in N runs" was uncomputable, and a useless semantic rule kept costing an LLM agent on
+// every run. Each report now carries a `json:constraints-run` block with one verdict per
+// rule; the retrospective's dated deliverable carries `json:constraints-annotations` for
+// verdicts revised after the fact. This command reads those blocks. Nothing else is stored.
+//
+// Usage:
+//   rule-stats report --reports=<glob> [--reports=<glob>…] [--json]
+//                     [--min-runs=N] [--min-files=M] [--max-fp=K]
+//   rule-stats lint   --reports=<glob> [--reports=<glob>…] [--json]
+//        reports without a block, unreadable blocks, rules left without a verdict
+//   rule-stats dead-globs [file|-]    # reads the output of match-constraints --sweep
+//
+// `--reports` is REQUIRED and repeatable (`--reports <glob>` also accepted). Where the
+// reports live is the project's business — several orchestrators, several layouts — so
+// the kit hardcodes nothing and there is no config file: the caller says where to look.
+// A directory value is read as `<dir>/**/*.md`. Shell-expanded paths after the command
+// work too.
+const fs = require('fs')
+const path = require('path')
+const rs = require('./lib/rule-stats.js')
+
+const argv = process.argv.slice(2)
+const cmd = argv[0]
+
+function flag(name, def) {
+  const hit = argv.find((a) => a.startsWith(`--${name}=`))
+  return hit === undefined ? def : hit.slice(name.length + 3)
+}
+
+function num(name, def) {
+  const v = flag(name, undefined)
+  return v === undefined ? def : Number(v)
+}
+
+// Every `--reports=<g>`, every `--reports <g>`, and every bare argument after the command.
+function reportPatterns() {
+  const out = []
+  for (let i = 1; i < argv.length; i++) {
+    const a = argv[i]
+    if (a.startsWith('--reports=')) out.push(a.slice('--reports='.length))
+    else if (a === '--reports' && argv[i + 1] !== undefined) out.push(argv[++i])
+    else if (!a.startsWith('--')) out.push(a)
+  }
+  return out.filter(Boolean)
+}
+
+function loadReports() {
+  const patterns = reportPatterns()
+  if (!patterns.length) {
+    process.stderr.write(`rule-stats ${cmd}: no reports given — expected --reports=<glob> (repeatable), e.g. --reports='.claude/work-items/**/*-constraints.md'\n`)
+    process.exit(2)
+  }
+  const files = new Set()
+  for (const p of patterns) {
+    const pat = fs.existsSync(p) && fs.statSync(p).isDirectory() ? path.join(p, '**', '*.md') : p
+    for (const f of fs.globSync(pat)) {
+      if (fs.statSync(f).isFile()) files.add(f)
+    }
+  }
+  return [...files].sort().map((p) => ({ path: p, text: fs.readFileSync(p, 'utf8') }))
+}
+
+function readInput(arg) {
+  if (!arg || arg === '-') {
+    // Without redirection, reading fd 0 would block on a terminal until Ctrl-D — an agent that
+    // forgot the pipe would hang instead of failing. Immediate diagnostic.
+    if (process.stdin.isTTY) {
+      process.stderr.write('rule-stats: nothing on stdin — expected a file or `-` (pipe)\n')
+      process.exit(2)
+    }
+    return readStdinBlocking()
+  }
+  return fs.readFileSync(arg, 'utf8')
+}
+
+function readStdinBlocking() {
+  // fs.readFileSync(0) throws EAGAIN when the pipe is non-blocking and the producer
+  // hasn't written yet (e.g. `match-constraints --sweep | rule-stats dead-globs -`).
+  const chunks = []
+  const buf = Buffer.alloc(65536)
+  for (;;) {
+    let n
+    try {
+      n = fs.readSync(0, buf, 0, buf.length, null)
+    } catch (e) {
+      if (e.code === 'EAGAIN') {
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10)
+        continue
+      }
+      if (e.code === 'EOF') break
+      throw e
+    }
+    if (n === 0) break
+    chunks.push(Buffer.from(buf.subarray(0, n)))
+  }
+  return Buffer.concat(chunks).toString('utf8')
+}
+
+function cmdReport() {
+  const reports = loadReports()
+  const { rows, problems, noBlock } = rs.parseReports(reports)
+  const aggs = rs.aggregate(rows)
+  const opts = { minRuns: num('min-runs', rs.DEFAULTS.minRuns), minFiles: num('min-files', rs.DEFAULTS.minFiles), maxFp: num('max-fp', rs.DEFAULTS.maxFp) }
+  const cls = rs.classify(aggs, opts)
+
+  if (argv.includes('--json')) {
+    process.stdout.write(JSON.stringify({
+      thresholds: opts,
+      reports: reports.length,
+      reports_without_block: noBlock.length,
+      problems,
+      rules: aggs,
+      ...cls,
+    }, null, 1) + '\n')
+    return
+  }
+
+  if (!reports.length) {
+    process.stdout.write('rule-stats: no report matches the given patterns.\n')
+    return
+  }
+  if (!aggs.length) {
+    process.stdout.write(`rule-stats: ${reports.length} report(s) read, none carries a measurable block — no run recorded.\n`)
+    if (problems.length) process.stdout.write(`  (${problems.length} problem(s): run \`rule-stats lint\` on the same patterns)\n`)
+    return
+  }
+
+  const rowsOut = aggs.map((a) => [a.rule, a.kind, String(a.runs), String(a.files_seen), String(a.hits), String(a.fp)])
+  const head = ['RULE', 'KIND', 'RUNS', 'FILES', 'HITS', 'FP']
+  const w = head.map((h, i) => Math.max(h.length, ...rowsOut.map((r) => r[i].length)))
+  const fmt = (r) => r.map((c, i) => (i === 0 || i === 1 ? c.padEnd(w[i]) : c.padStart(w[i]))).join('  ')
+  process.stdout.write(fmt(head) + '\n')
+  for (const r of rowsOut) process.stdout.write(fmt(r) + '\n')
+
+  process.stdout.write(`\nSource: ${reports.length} report(s)`)
+  if (noBlock.length) process.stdout.write(`, ${noBlock.length} without a measurement block (not counted)`)
+  process.stdout.write(`\nThresholds: ${opts.minRuns} runs, ${opts.minFiles} file observations, ${opts.maxFp} max FP\n`)
+  const section = (title, list, render) => {
+    if (!list.length) return
+    process.stdout.write(`\n${title} (${list.length})\n`)
+    for (const a of list) process.stdout.write(`  - ${render(a)}\n`)
+  }
+  section('TOOL PROMOTION — semantic, never violated, large population', cls.promotion,
+    (a) => `${a.rule}: ${a.runs} runs, ${a.files_seen} files, 0 violations — "${a.text}"`)
+  section('FALSE POSITIVE PRONE — at least half of hits dismissed', cls.falsePositiveProne,
+    (a) => `${a.rule}: ${a.hits} hits including ${a.fp} false positives — "${a.text}"`)
+  // No "dead rule" section: a rule whose glob matches nothing has no observation here.
+  // That's what `dead-globs` sees, across the whole repo.
+  if (problems.length) {
+    // Never silent: a rule left without a verdict is a measurement lost, and the fix is
+    // in a report someone can still edit.
+    process.stdout.write(`\n⚠ ${problems.length} problem(s) in the blocks — run \`rule-stats lint\` on the same patterns\n`)
+  }
+}
+
+// Exit 1 when at least one problem: usable as a gate after a verification run.
+function cmdLint() {
+  const reports = loadReports()
+  const { problems, noBlock } = rs.parseReports(reports)
+
+  if (argv.includes('--json')) {
+    process.stdout.write(JSON.stringify({ reports: reports.length, without_block: noBlock, problems }, null, 1) + '\n')
+    process.exitCode = problems.length ? 1 : 0
+    return
+  }
+  if (!reports.length) {
+    process.stdout.write('rule-stats lint: no report matches the given patterns.\n')
+    return
+  }
+  for (const p of problems) process.stdout.write(`${p.path}:${p.line}: ${p.msg}\n`)
+  if (noBlock.length) {
+    process.stdout.write(`\n${noBlock.length} report(s) without a measurement block (older format, not counted):\n`)
+    for (const f of noBlock) process.stdout.write(`  - ${f}\n`)
+  }
+  process.stdout.write(`\n${reports.length} report(s), ${problems.length} problem(s), ${noBlock.length} without block\n`)
+  process.exitCode = problems.length ? 1 : 0
+}
+
+function cmdDeadGlobs(arg) {
+  let data
+  try {
+    data = JSON.parse(readInput(arg))
+  } catch (e) {
+    process.stderr.write(`rule-stats dead-globs: unreadable JSON — ${e.message}\n`)
+    process.exit(2)
+  }
+  // Accepts the full `--sweep` output as well as just the `sweep` object. An input with no
+  // globs at all is NOT "no dead glob": it's an input that isn't a sweep (degraded mode,
+  // `{"error":"no_files"}`, wrong pipe). Say so, otherwise the retrospective wrongly
+  // concludes that all globs are alive.
+  // The `sweep` key is ONLY emitted by `--sweep`: its presence, even empty (a repo with no
+  // constraint), is enough to validate the input. Its absence means it's other JSON — refuse
+  // rather than conclude "no dead glob" on an input that was never actually read.
+  const bare = data && typeof data === 'object' && Object.values(data).every(Array.isArray)
+  const sweep = data && typeof data === 'object' && data.sweep !== undefined ? data.sweep
+    : bare ? data
+      : null
+  if (!sweep || typeof sweep !== 'object') {
+    process.stderr.write('rule-stats dead-globs: input has no sweep data — expected the output of `match-constraints --sweep`\n')
+    process.exit(2)
+  }
+  const dead = rs.deadGlobs(sweep)
+  if (argv.includes('--json')) {
+    process.stdout.write(JSON.stringify(dead, null, 1) + '\n')
+    return
+  }
+  if (!dead.length) {
+    process.stdout.write('rule-stats: no dead glob — all match at least one tracked file.\n')
+    return
+  }
+  process.stdout.write(`DEAD GLOB (${dead.length}) — 0 files across the whole repo, the constraint is checked nowhere\n`)
+  for (const d of dead) process.stdout.write(`  - ${d.constraint}: ${d.glob}\n`)
+}
+
+const a1 = argv[1]
+switch (cmd) {
+  case 'report': cmdReport(); break
+  case 'lint': cmdLint(); break
+  case 'dead-globs': cmdDeadGlobs(a1 && !a1.startsWith('--') ? a1 : undefined); break
+  default:
+    process.stderr.write('usage: rule-stats <report|lint|dead-globs> [...]\n')
+    process.exit(2)
+}

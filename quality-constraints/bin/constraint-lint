@@ -1,0 +1,359 @@
+#!/usr/bin/env node
+'use strict'
+// constraint-lint — conformance of constraint files to the format read by match-constraints.
+// Normative grammar: SPEC.md (root of the quality-constraints plugin). This script is its
+// executable form. The parser is shared with the matcher: no second grammar to maintain.
+//
+// It answers ONE question: "will this rule be executed as written?"
+// So it catches the SILENTLY INERT rule — written, re-read by a human, never seen by
+// the parser. Real defect class: a rule under `## Rules` instead of `## Semantic Rules`
+// is extracted by nobody, and nothing in the chain flagged it.
+//
+// It does NOT judge: a glob's liveness (`--sweep` + `rule-stats dead-globs`, which needs the
+// whole repository), a rule's usefulness (`rule-stats report`, which needs N runs), nor its
+// truthfulness (the producer validates it against the full population).
+//
+// Usage:
+//   constraint-lint                       # .claude/quality/code/constraints
+//   constraint-lint <dir|file>...         # e.g. a plugin's baseline
+//   constraint-lint --strict              # warnings counted as errors
+//   constraint-lint --quiet               # print only the summary
+// Exit: 0 conforming | 1 format errors | 2 nothing could be checked
+//
+// Three levels: error (the rule will not be executed as written), warning (suspect
+// construct — blocks under --strict), info (LEGITIMATE construct worth flagging: `via=`,
+// advisory — never counted, even under --strict, otherwise the onboard gate would reject a
+// conforming render).
+//
+// The `2` is deliberately distinct from `0`: "no errors" and "nothing verified" must never
+// display the same (lesson from fail-open gates — an exit 0 with no material reads as a PASS).
+
+const fs = require('fs')
+const path = require('path')
+const { execFileSync } = require('child_process')
+const {
+  isInSemanticSection,
+  isInStaticBlock,
+  parseConstraintFile,
+  parseStaticRule,
+  regexError,
+  semanticIdentityText,
+} = require('../lib/parse-constraints.js')
+
+function main(argv) {
+  let strict = false
+  let quiet = false
+  const targets = []
+
+  for (const arg of argv) {
+    if (arg === '--strict') strict = true
+    else if (arg === '--quiet') quiet = true
+    else if (arg === '-h' || arg === '--help') {
+      process.stdout.write(help())
+      return 0
+    } else if (arg.startsWith('-')) {
+      process.stderr.write(`constraint-lint: unknown option ${arg}\n`)
+      return 2
+    } else targets.push(arg)
+  }
+
+  if (targets.length === 0) targets.push(path.join(repoRoot(), '.claude', 'quality', 'code', 'constraints'))
+
+  const files = []
+  const missing = []
+  for (const target of targets) {
+    if (isDirectory(target)) files.push(...listMarkdownFiles(target))
+    else if (isFile(target)) files.push(target)
+    else missing.push(target)
+  }
+  files.sort()
+
+  if (files.length === 0) {
+    process.stderr.write(`constraint-lint: no constraint file found (${targets.join(' ')}) — NO check performed\n`)
+    if (missing.length > 0) process.stderr.write(`  missing target: ${missing.join(' ')}\n`)
+    return 2
+  }
+  if (missing.length > 0) process.stderr.write(`constraint-lint: ⚠ missing target(s), skipped: ${missing.join(' ')}\n`)
+
+  const report = new Report()
+  const state = new LintState(report)
+  for (const file of files) lintFile(file, state)
+  lintKeys(state)
+
+  if (!quiet) {
+    for (const entry of report.errors) process.stdout.write(`✗ ${entry.loc}\n  ${entry.message}\n`)
+    for (const entry of report.warnings) process.stdout.write(`⚠ ${entry.loc}\n  ${entry.message}\n`)
+    for (const entry of report.infos) process.stdout.write(`ℹ ${entry.loc}\n  ${entry.message}\n`)
+    if (report.errors.length > 0 || report.warnings.length > 0 || report.infos.length > 0) process.stdout.write('\n')
+    for (const [key, group] of [...state.keyFiles].sort(([a], [b]) => a.localeCompare(b))) {
+      if (group.length > 1) process.stdout.write(`ℹ constraint "${key}" merged from ${group.length} files: ${group.join(' ')}\n`)
+    }
+  }
+
+  const infoSuffix = report.infos.length > 0 ? `, ${report.infos.length} info(s)` : ''
+  process.stdout.write(`constraint-lint: ${files.length} file(s), ${report.errors.length} error(s), ${report.warnings.length} warning(s)${infoSuffix}\n`)
+  if (report.errors.length > 0) return 1
+  if (strict && report.warnings.length > 0) {
+    process.stdout.write('constraint-lint: --strict, warnings counted as errors\n')
+    return 1
+  }
+  return 0
+}
+
+class Report {
+  constructor() {
+    this.errors = []
+    this.warnings = []
+    this.infos = []
+  }
+
+  error(loc, message) {
+    this.errors.push({ loc, message })
+  }
+
+  warning(loc, message) {
+    this.warnings.push({ loc, message })
+  }
+
+  // Informational notice: a LEGITIMATE construct worth flagging, never counted — even
+  // under --strict. This is what distinguishes "the format documents this case" (via=,
+  // advisory) from "this case is suspect" (warning). A gate that treats --strict as
+  // blocking must not reject a file that the onboard render produces in conformance with
+  // the SPEC.
+  info(loc, message) {
+    this.infos.push({ loc, message })
+  }
+}
+
+class LintState {
+  constructor(report) {
+    this.report = report
+    this.idAt = new Map()
+    this.semanticAt = new Map()
+    this.keyFiles = new Map()
+    this.keys = new Map()
+  }
+
+  key(key) {
+    if (!this.keys.has(key)) this.keys.set(key, { semantic: 0, must: 0, static: 0, semanticAt: null })
+    return this.keys.get(key)
+  }
+}
+
+function lintFile(file, state) {
+  const key = path.basename(file, '.md')
+  const group = state.keyFiles.get(key) || []
+  group.push(file)
+  state.keyFiles.set(key, group)
+
+  let text
+  try {
+    text = fs.readFileSync(file, 'utf8')
+  } catch (error) {
+    state.report.error(`${file}:1`, `cannot read file: ${error.message}`)
+    return
+  }
+  const document = parseConstraintFile(text)
+  const aggregate = state.key(key)
+
+  if (document.frontmatter.openAt === null) {
+    state.report.error(`${file}:1`, "missing frontmatter: the file must start with `---` — without it, no `paths:` is read and the constraint matches nothing")
+  }
+  if (document.frontmatter.pathsAt === null) {
+    state.report.error(`${file}:1`, 'no `paths:` key in the frontmatter — the constraint will match no file and will be absent from the output, silently')
+  } else if (document.frontmatter.paths.length === 0) {
+    state.report.error(`${file}:1`, "`paths:` with no glob — same effect as a missing key")
+  }
+  for (const entry of document.frontmatter.paths) lintGlob(`${file}:${entry.line}`, entry.value, state.report)
+
+  // `exclude:` obeys the same grammar as `paths:` — it is a subtraction by path, not a
+  // negation inside a pattern. An empty `exclude:` key reads as an exclusion in place
+  // while removing nothing: that is the defect to name, not to let through.
+  if (document.frontmatter.excludeAt !== null && document.frontmatter.exclude.length === 0) {
+    state.report.error(`${file}:${document.frontmatter.excludeAt}`, "`exclude:` with no glob: the key reads as an exclusion in place but removes no file — delete it or give it a glob")
+  }
+  for (const entry of document.frontmatter.exclude) lintGlob(`${file}:${entry.line}`, entry.value, state.report)
+
+  for (const block of document.staticBlocks) {
+    if (block.closeAt === null) state.report.error(`${file}:${block.openAt}`, 'block ````rules```` never closed: the rest of the file is interpreted as static rules')
+    for (const rule of block.rules) {
+      aggregate.static += 1
+      lintStaticRule(key, `${file}:${rule.line}`, rule.raw, state)
+    }
+  }
+
+  for (let index = 0; index < document.lines.length; index++) {
+    const line = document.lines[index]
+    const lineNumber = index + 1
+    if (isInStaticBlock(document, lineNumber)) continue
+    if (line.startsWith('```') && line.includes('rules') && line !== '```rules') {
+      state.report.error(`${file}:${lineNumber}`, `unrecognized fence "${line}": the parser requires exactly \`\`\`rules\`\`\` (no space, no suffix) — the block's rules will never be executed`)
+    }
+
+    const bullet = line.match(/^[ \t]*-[ \t]+(.*)$/)
+    if (!bullet) continue
+    const body = bullet[1]
+    const semantic = isInSemanticSection(document, lineNumber)
+    const recognized = document.semanticSections
+      .flatMap((section) => section.rules)
+      .find((rule) => rule.line === lineNumber)
+
+    if (body.startsWith('MUST') || body.startsWith('SHOULD')) {
+      if (!semantic) {
+        state.report.error(`${file}:${lineNumber}`, `rule "${body.slice(0, 60)}" outside any \`## Semantic …\` section: the parser will never extract it — it is inert`)
+      } else if (recognized && recognized.delegated) {
+        state.report.info(`${file}:${lineNumber}`, 'delegated rule (`[via=`): not checked by the checker, kept for generation prompts')
+      } else if (recognized) {
+        aggregate.semantic += 1
+        if (recognized.text.startsWith('MUST')) aggregate.must += 1
+        if (aggregate.semanticAt === null) aggregate.semanticAt = `${file}:${lineNumber}`
+        const identity = `${key}${semanticIdentityText(recognized.text)}`
+        if (state.semanticAt.has(identity)) {
+          state.report.error(`${file}:${lineNumber}`, `semantic rule identical to ${state.semanticAt.get(identity)} under the same constraint "${key}": same store identity, ghost duplicate`)
+        } else state.semanticAt.set(identity, `${file}:${lineNumber}`)
+      }
+    } else if (semantic) {
+      const head = body.split(':', 1)[0].trim().split(/\s/, 1)[0]
+      if (/^(MUST|SHOULD)/i.test(head)) {
+        state.report.error(`${file}:${lineNumber}`, `bullet "${body.slice(0, 40)}": the severity must be in UPPERCASE (\`MUST\`, \`MUST NOT\`, \`SHOULD\`) — otherwise the rule is ignored without a word`)
+      } else {
+        state.report.warning(`${file}:${lineNumber}`, 'bullet with no severity in a semantic section: ignored by the parser')
+      }
+    }
+  }
+
+  if (aggregate.semanticAt === null) aggregate.semanticAt = `${file}:1`
+}
+
+function lintStaticRule(key, loc, raw, state) {
+  const rule = parseStaticRule(raw)
+  const count = rule.fields.length
+  if (count < 4) {
+    state.report.error(loc, `static rule with ${count} field(s): expected \`ID | present|absent | regex | message\` (separator = space-pipe-space)`)
+    return
+  }
+  // Fields 5+ are named suffixes (`gate=`, `gate!=`, `via=`). A field with no known prefix
+  // is not an exotic suffix: it is a regex that got split in two by an internal ` | `.
+  // The rule that would then run is not the rule that was written.
+  if (rule.unknown.length > 0 || count > 6) {
+    const offender = rule.unknown[0] || rule.fields[6] || ''
+    state.report.error(loc, `${count} fields, unrecognized field "${offender}": expected \`gate=<regex>\`, \`gate!=<regex>\` or \`via=<tool>\` — otherwise a regex likely contains \` | \`, glue the alternation \`(a|b)\``)
+    return
+  }
+
+  if (rule.id === '') state.report.error(loc, 'empty ID')
+  if (rule.message === '') state.report.error(loc, "empty message — this is the text shown to the code's author, it cannot be absent")
+  if (rule.type !== 'present' && rule.type !== 'absent') state.report.error(loc, `type "${rule.type}": expected \`present\` or \`absent\``)
+  if (rule.regex === '') state.report.error(loc, 'empty regex')
+  else {
+    const reason = regexError(rule.regex)
+    if (reason !== null) state.report.error(loc, `regex rejected by the engine that will run it (JS RegExp): ${reason}`)
+  }
+  // The gate is run by the same engine as the main probe: same requirements, and a gate
+  // that does not compile makes the whole rule unevaluated — not more lenient, mute.
+  if (rule.gate !== null) {
+    if (rule.gate.regex === '') {
+      state.report.error(loc, 'empty gate: a trigger with no pattern restricts nothing, remove the suffix')
+    } else {
+      const reason = regexError(rule.gate.regex)
+      if (reason !== null) state.report.error(loc, `gate rejected by the engine that will run it (JS RegExp): ${reason}`)
+    }
+    // Legitimate combination: the onboard render carries the gate down with the probe,
+    // and `via=` is added afterwards by the dev. The gate restricts nothing while the
+    // rule is delegated, but becomes exact again if `via=` is removed — keeping it is
+    // correct.
+    if (rule.via !== '') {
+      state.report.info(loc, 'gate on a delegated rule (`via=`): the rule is not executed here, the gate restricts nothing')
+    }
+  }
+  if (rule.via !== '' && !/^via=[A-Za-z0-9_-]+(:[A-Za-z0-9_.:-]+)?$/.test(rule.via)) {
+    state.report.error(loc, `malformed delegation marker "${rule.via}": expected \`via=<tool>\` or \`via=<tool>:<identifier>\``)
+  }
+  if (rule.id !== '' && !/^[A-Z]{2,5}-[0-9]{3}$/.test(rule.id)) {
+    state.report.warning(loc, `ID "${rule.id}" outside convention \`^[A-Z]{2,5}-[0-9]{3}$\` (ENT-001, HDL-002…)`)
+  }
+  if (rule.id !== '') {
+    const identity = `${key}${rule.id}`
+    if (state.idAt.has(identity)) {
+      state.report.error(loc, `ID "${rule.id}" already declared for constraint "${key}" at ${state.idAt.get(identity)} — same store identity, one of the two rules is never measured`)
+    } else state.idAt.set(identity, loc)
+  }
+}
+
+function lintGlob(loc, glob, report) {
+  let unsupported = ''
+  if (glob.includes('[') || glob.includes(']')) unsupported = '[]'
+  else if (glob.includes('!')) unsupported = '!'
+  if (unsupported !== '') report.error(loc, `glob "${glob}": \`${unsupported}\` not supported (only \`*\`, \`**\`, \`**/\`, \`?\` and \`{a,b}\` are translated) — narrow the glob instead of excluding`)
+
+  if (glob.startsWith('/')) report.error(loc, `glob "${glob}" is absolute: the pattern is anchored on the path relative to the repository root`)
+  else if (glob.startsWith('./')) report.error(loc, `glob "${glob}": remove the \`./\`, the pattern is anchored (^…$)`)
+
+  // No extension check here. The matcher derives its filter from the `paths:` themselves
+  // (`codeExtensionFilter`): no extension is out of scope any more, so there is no list
+  // to enforce. A `*.ts` or `*.py` glob is as valid as a `*.php` one.
+}
+
+function lintKeys(state) {
+  for (const [key, aggregate] of [...state.keys].sort(([a], [b]) => a.localeCompare(b))) {
+    const at = aggregate.semanticAt || `${state.keyFiles.get(key)[0]}:1`
+    if (aggregate.static === 0 && aggregate.semantic === 0) {
+      state.report.warning(at, `constraint "${key}" has no executable rule (no \`rules\` block, no MUST/SHOULD bullet under \`## Semantic …\`)`)
+    } else if (aggregate.semantic > 0 && aggregate.must === 0) {
+      // Documented mode, not a defect: a constraint that is all SHOULD is advisory by
+      // choice (a practice intended as a recommendation stays a recommendation). Worth
+      // flagging — the trap of an author who believed their SHOULDs were checked is
+      // real — but never worth blocking.
+      state.report.info(at, `constraint "${key}": ${aggregate.semantic} semantic rule(s), none MUST → \`advisory\`, never dispatched, hence never measured`)
+    }
+  }
+}
+
+function listMarkdownFiles(directory) {
+  const files = []
+  const walk = (current) => {
+    let entries
+    try {
+      entries = fs.readdirSync(current, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const entry of entries) {
+      const target = path.join(current, entry.name)
+      if (entry.isDirectory()) walk(target)
+      else if (entry.isFile() && entry.name.endsWith('.md')) files.push(target)
+    }
+  }
+  walk(directory)
+  return files
+}
+
+function repoRoot() {
+  try {
+    return execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
+  } catch {
+    return process.cwd()
+  }
+}
+
+function isDirectory(target) {
+  try {
+    return fs.statSync(target).isDirectory()
+  } catch {
+    return false
+  }
+}
+
+function isFile(target) {
+  try {
+    return fs.statSync(target).isFile()
+  } catch {
+    return false
+  }
+}
+
+function help() {
+  return `constraint-lint — conformance of constraint files to the format read by match-constraints.\n\nUsage:\n  constraint-lint                       # .claude/quality/code/constraints\n  constraint-lint <dir|file>...         # e.g. a plugin's baseline\n  constraint-lint --strict              # warnings counted as errors\n  constraint-lint --quiet               # print only the summary\n`
+}
+
+process.exitCode = main(process.argv.slice(2))

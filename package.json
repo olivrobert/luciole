@@ -1,0 +1,9 @@
+{
+  "name": "luciole",
+  "private": true,
+  "description": "Claude Code plugin marketplace: measured code quality for existing codebases.",
+  "license": "MIT",
+  "scripts": {
+    "test": "node --test 'quality-constraints/tests/*.test.mjs' 'quality-onboard/tests/*.test.mjs'"
+  }
+}

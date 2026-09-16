@@ -1,0 +1,21 @@
+{
+  "name": "olivier-robert",
+  "owner": {
+    "name": "Olivier Robert"
+  },
+  "metadata": {
+    "description": "Measured code quality for existing codebases, stack-agnostic: a constraint engine that derives its scope from the constraints themselves, plus an onboarding layer that derives every rule from the project's own code."
+  },
+  "plugins": [
+    {
+      "name": "quality-constraints",
+      "description": "The constraint engine: file format (SPEC), matcher, format linter, measurement store, diff/directory verification for reviews, constraint editing and retrospective. Language-agnostic.",
+      "source": "./quality-constraints"
+    },
+    {
+      "name": "quality-onboard",
+      "description": "The onboarding layer: analyzes an existing codebase, measures its conventions, writes the constraint files and generates the project's own scaffolding skills. Nothing generic ships with it: every rule, model and tool reference is derived from the project.",
+      "source": "./quality-onboard"
+    }
+  ]
+}

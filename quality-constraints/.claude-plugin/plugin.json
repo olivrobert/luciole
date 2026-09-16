@@ -1,0 +1,8 @@
+{
+  "name": "quality-constraints",
+  "version": "1.2.0",
+  "description": "Constraint file format (SPEC), matcher, format lint, measurement projection, diff/directory verification and retrospective. Language-agnostic: owns the format, knows nothing about any stack.",
+  "author": {
+    "name": "Olivier Robert"
+  }
+}

@@ -1,0 +1,270 @@
+#!/usr/bin/env node
+'use strict'
+// measure-candidates — measures a CANDIDATE rule against the full population of its glob,
+// BEFORE it becomes a constraint file.
+//
+// It answers ONE question: "what proportion of real code does this rule describe?"
+// So it catches the PLAUSIBLE BUT WRONG rule — derived from 3 examples, true on them,
+// false on the population. Real defect class: a MUST written without measurement because it
+// "felt semantic", true on 5 files out of 105, which then screams at correct code on every
+// review.
+//
+// It does NOT judge format (`constraint-lint`), nor the vitality of an already-written glob
+// (`match-constraints --sweep`). It measures candidates, not constraints.
+//
+// Ratio semantics: a candidate carries a PROBE (`probe`) — a regex/meaning pair that
+// approximates the rule. A so-called "semantic" rule is not for that reason unmeasurable: the
+// probe doesn't need to be executable in production, only to be correlated. A rule with no
+// possible probe isn't a constraint, it's a tool-candidate.
+//
+// Usage:
+//   measure-candidates <candidates.json> [--min-population N] [--threshold R] [--examples N]
+//   measure-candidates --schema          # prints the expected input format
+//
+// Trigger: a conditional rule doesn't target the whole population of its glob. Its probe then
+// carries a `probe.gate` — a second regex, which SELECTS the files concerned without judging
+// their compliance. The ratio is computed on them alone. Without `gate`, the triggered
+// population is the entire population and nothing changes.
+//
+// Input (JSON):
+//   { "candidates": [ { "id", "slug", "text", "glob", "probe": { "regex", "sense", "gate"? } } ] }
+//   sense: "present" (the regex MUST appear) | "absent" (it must NOT appear)
+//   gate:  { "regex", "sense" } — optional, same grammar; selects the sub-population
+//
+// Output (JSON, stdout): one object per candidate, verdict + counter-examples.
+//   `files` = glob population, `triggered` = triggered sub-population, `ratio` = conform/triggered
+//   verdict STATIC       ratio == 1                      → statically enforceable rule
+//   verdict SEMANTIC     threshold <= ratio < 1          → semantic, ratio + exemptions to cite
+//   verdict REFORMULATE  ratio < threshold               → false as stated
+//   verdict INSUFFICIENT triggered < min-population       → not a rule, the sample proves nothing
+//   verdict UNMEASURED   no probe                          → tool-candidate, never a constraint
+//
+// A verdict isn't a decision: it classifies. What to do with a REFORMULATE — fix the
+// `gate` and re-measure, requalify, or discard — is settled in review, not here.
+//
+// Exit code: 0 if all candidates are STATIC or SEMANTIC, 1 otherwise. A run that exits 1 isn't
+// a script failure: it's the list of what's left to arbitrate.
+
+const fs = require('fs')
+const path = require('path')
+const { compileRule, globMatcher } = require('../lib/parse-constraints.js')
+
+const SKIP_DIR = /^(\.git|node_modules|vendor|var|build|dist|\.idea|\.vscode|__pycache__)$/
+
+const SCHEMA = `{
+  "root": "src",                      // optional — scan root, default "."
+  "candidates": [
+    {
+      "id": "HDL-004",                // candidate rule identifier
+      "slug": "handler",              // component, for report grouping
+      "text": "MUST: ...",            // the statement, as it would be written in the constraint file
+      "glob": "src/**/*Handler.php",  // same grammar as the frontmatter paths:
+      "exclude": "src/**/*Test.php",  // optional — glob or list, like the frontmatter exclude:
+      "probe": {
+        "regex": "__invoke\\\\(.*\\\\): void",
+        "sense": "absent",            // "present" | "absent"
+        "gate": {                     // optional — restricts measurement to targeted files
+          "regex": "AsMessageHandler",//   the rule only applies to them
+          "sense": "present"          //   "present" | "absent"
+        }
+      }
+    }
+  ]
+}`
+
+function walkCode(dir) {
+  const out = []
+  const walk = (d) => {
+    let entries
+    try {
+      entries = fs.readdirSync(d, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const e of entries) {
+      if (e.isDirectory()) {
+        if (!SKIP_DIR.test(e.name)) walk(path.join(d, e.name))
+      } else if (e.isFile()) {
+        // NO extension filter: each candidate's `glob` already bounds the extension, and a
+        // list of languages here would be stack knowledge to maintain — the same knowledge
+        // match-constraints.js refuses to have. Files outside the population are never read:
+        // `measure` filters by glob before any readFileSync.
+        out.push(path.join(d, e.name))
+      }
+    }
+  }
+  walk(dir)
+  return out.sort()
+}
+
+function measure(candidate, files, options) {
+  const { id, slug = null, text = '', glob, probe } = candidate
+  // `exclude` accepts a glob or a list, like the frontmatter `exclude:` key (SPEC §2): a
+  // candidate is measured against the population its constraint will actually have.
+  const exclude = candidate.exclude === undefined ? [] : [].concat(candidate.exclude)
+  const base = { id, slug, text, glob, ...(exclude.length > 0 ? { exclude } : {}) }
+
+  if (!glob) return { ...base, verdict: 'UNMEASURED', reason: 'missing glob' }
+
+  const matcher = globMatcher(glob.replace(/^\.\//, ''))
+  const excluders = exclude.map((p) => globMatcher(p.replace(/^\.\//, '')))
+  const population = files.filter((f) => matcher.test(f) && !excluders.some((re) => re.test(f)))
+
+  if (!probe || !probe.regex) {
+    return { ...base, files: population.length, verdict: 'UNMEASURED', reason: 'no probe — not expressible as a regex, so a tool-candidate' }
+  }
+
+  const sense = probe.sense === 'absent' ? 'absent' : 'present'
+  const re = compileRule(probe.regex)
+  if (re === null) {
+    return { ...base, files: population.length, verdict: 'UNMEASURED', reason: `invalid regex: ${probe.regex}` }
+  }
+  // A probe that claims to span multiple lines CANNOT become a rule: the matcher evaluates
+  // line by line. Measured, it would give an inert ratio rather than a false one — worse,
+  // because an inert ratio reads like a real ratio.
+  if (/\\n|\[\\s\\S\]|\[\^\]/.test(probe.regex)) {
+    return { ...base, files: population.length, verdict: 'UNMEASURED', reason: `multi-line probe (${probe.regex}) — the matcher evaluates line by line: the rule would be inert, so a tool-candidate` }
+  }
+
+  // `probe.gate` — TRIGGER probe, optional. It does not judge compliance, it selects the files
+  // the rule actually targets. Without it, a conditional rule (e.g. "the owning side of a
+  // ManyToMany names its join table") is counted false on every file outside the trigger:
+  // 3/9 instead of 3/3. That ratio is a measurement artifact, not a fact about the code — and
+  // it's enough to make a true rule fall below the threshold.
+  const gate = probe.gate || null
+  let gateRe = null
+  if (gate) {
+    if (typeof gate.regex !== 'string' || gate.regex === '') {
+      return { ...base, files: population.length, verdict: 'UNMEASURED', reason: 'probe.gate has no regex' }
+    }
+    gateRe = compileRule(gate.regex)
+    if (gateRe === null) {
+      return { ...base, files: population.length, verdict: 'UNMEASURED', reason: `invalid gate: ${gate.regex}` }
+    }
+    if (/\\n|\[\\s\\S\]|\[\^\]/.test(gate.regex)) {
+      return { ...base, files: population.length, verdict: 'UNMEASURED', reason: `multi-line gate (${gate.regex}) — the matcher evaluates line by line` }
+    }
+  }
+  const gateSense = gate && gate.sense === 'absent' ? 'absent' : 'present'
+
+  const counterexamples = []
+  let conform = 0
+  let triggered = 0
+  for (const file of population) {
+    let content
+    try {
+      content = fs.readFileSync(file, 'utf8')
+    } catch {
+      continue
+    }
+    // LINE BY LINE, like the production matcher (SPEC §3) — never on the whole content. A
+    // `RegExp` without the `m` flag tested on the whole file makes every probe anchored by `^`
+    // lie: 0% in `present` (the `^` can only match right before `<?php`), 100% for free in
+    // `absent`. Those are invented STATIC verdicts, exactly what this tool must prevent.
+    const lines = content.split('\n')
+    if (gateRe !== null) {
+      const gateHit = lines.some((line) => gateRe.test(line))
+      // Outside the trigger: neither conforming nor a counter-example. The file drops out of
+      // the measurement.
+      if ((gateSense === 'present' ? gateHit : !gateHit) === false) continue
+    }
+    triggered++
+    const hit = lines.some((line) => re.test(line))
+    const ok = sense === 'present' ? hit : !hit
+    if (ok) conform++
+    else if (counterexamples.length < options.examples) counterexamples.push(file)
+  }
+
+  const result = {
+    ...base,
+    probe: { regex: probe.regex, sense, ...(gate ? { gate: { regex: gate.regex, sense: gateSense } } : {}) },
+    files: population.length,
+    triggered,
+    conform,
+    violations: triggered - conform,
+    ratio: triggered === 0 ? 0 : Number((conform / triggered).toFixed(4)),
+    counterexamples,
+  }
+
+  // The floor applies to the TRIGGERED population: that's the one carrying the proof. A rule
+  // true on 3 files out of 3 remains a precedent, not a convention — but that's a judgment
+  // call, and it belongs to the substantive review, not the ratio.
+  if (triggered < options.minPopulation) {
+    result.verdict = 'INSUFFICIENT'
+    result.reason = gate
+      ? `triggered on ${triggered} file(s) < ${options.minPopulation} (population ${population.length}) — the sample proves nothing`
+      : `population ${population.length} < ${options.minPopulation} — the sample proves nothing, 2/2 isn't 100%`
+    return result
+  }
+  if (result.ratio === 1) {
+    result.verdict = 'STATIC'
+    return result
+  }
+  if (result.ratio >= options.threshold) {
+    result.verdict = 'SEMANTIC'
+    result.reason = `${conform}/${triggered} — semantic, the ratio and exemptions must appear in the statement`
+    return result
+  }
+  result.verdict = 'REFORMULATE'
+  result.reason = `${conform}/${triggered} — false as stated: narrow the condition (probe.gate) then re-measure, or discard`
+  return result
+}
+
+function main(argv) {
+  if (argv.length === 0 || argv[0] === '--help' || argv[0] === '-h') {
+    process.stdout.write('usage: measure-candidates <candidates.json> [--min-population N] [--threshold R] [--examples N]\n')
+    return argv.length === 0 ? 2 : 0
+  }
+  if (argv[0] === '--schema') {
+    process.stdout.write(SCHEMA + '\n')
+    return 0
+  }
+
+  const options = { minPopulation: 5, threshold: 0.9, examples: 5 }
+  const input = argv[0]
+  for (let i = 1; i < argv.length; i++) {
+    const next = argv[i + 1]
+    if (argv[i] === '--min-population') options.minPopulation = Number(next)
+    else if (argv[i] === '--threshold') options.threshold = Number(next)
+    else if (argv[i] === '--examples') options.examples = Number(next)
+    else continue
+    i++
+  }
+  if (!Number.isFinite(options.minPopulation) || !Number.isFinite(options.threshold) || !Number.isFinite(options.examples)) {
+    process.stderr.write('measure-candidates: invalid numeric option\n')
+    return 2
+  }
+
+  let payload
+  try {
+    payload = JSON.parse(fs.readFileSync(input, 'utf8'))
+  } catch (error) {
+    process.stderr.write(`measure-candidates: unreadable input (${error.message})\n`)
+    return 2
+  }
+  const candidates = Array.isArray(payload) ? payload : payload.candidates
+  if (!Array.isArray(candidates)) {
+    process.stderr.write('measure-candidates: no `candidates` array — see --schema\n')
+    return 2
+  }
+
+  const root = (Array.isArray(payload) ? '.' : payload.root) || '.'
+  const files = walkCode(root).map((f) => f.replace(/^\.\//, ''))
+
+  const results = candidates.map((candidate) => measure(candidate, files, options))
+  const counts = {}
+  for (const r of results) counts[r.verdict] = (counts[r.verdict] || 0) + 1
+
+  process.stdout.write(JSON.stringify({
+    root,
+    scanned: files.length,
+    options,
+    counts,
+    results,
+  }, null, 2) + '\n')
+
+  const settled = (counts.STATIC || 0) + (counts.SEMANTIC || 0)
+  return settled === results.length ? 0 : 1
+}
+
+process.exitCode = main(process.argv.slice(2))
