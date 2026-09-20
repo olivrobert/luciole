@@ -1,6 +1,6 @@
 # Structure of the tooling backlog
 
-A single file for the whole project: `.claude/quality/code/lint-backlog.md`.
+A single file for the whole project: `${QUALITY_ROOT}/code/lint-backlog.md`.
 
 One file, not one per type: an analyzer or formatter is configured once, not once per
 file type. A backlog split across six files can't be read.

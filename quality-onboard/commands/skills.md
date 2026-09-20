@@ -5,6 +5,9 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 
 # Onboard — skills
 
+Resolve `QUALITY_ROOT` from the environment, then `.luciole.env`, defaulting to
+`.ia/quality`. Every path below is relative to that root.
+
 Last command in the pipeline. It makes each scope **addressable**: a technical
 plan maps every file to create onto a skill, so each `scope` in `scopes.json`
 gets its own — and it never has anything more to say than "read the
@@ -25,7 +28,7 @@ ungated or unapproved constraints routes to rules that are wrong.
 
 ## 11a. The skill, scope by scope
 
-For each `scope` in `.claude/quality/onboard/scopes.json`, render
+For each `scope` in `${QUALITY_ROOT}/onboard/scopes.json`, render
 `.claude/skills/quality-<slug>/SKILL.md` from this template:
 
 ```markdown
@@ -39,7 +42,7 @@ allowed-tools: Read, Write, Edit, Skill
 
 ## Workflow
 
-1. Read `.claude/quality/code/constraints/<slug>.md` and apply it in full — it is the only normative source.
+1. Read `${QUALITY_ROOT}/code/constraints/<slug>.md` and apply it in full — it is the only normative source.
 2. Read `<scope.model>` and mirror its shape; where the constraints disagree, the constraints win.
 
 ## Output

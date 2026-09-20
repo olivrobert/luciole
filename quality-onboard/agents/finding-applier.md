@@ -18,7 +18,7 @@ never the substance of the rule.
 The prompt gives you:
 
 - `slug` — the scope
-- `candidates` — the JSON to edit (`.claude/quality/onboard/candidates/{slug}.json`)
+- `candidates` — the JSON to edit (`${QUALITY_ROOT}/onboard/candidates/{slug}.json`)
 - `findings` — the findings JSON to apply
 - `refDir` — references directory
 

@@ -5,7 +5,10 @@ allowed-tools: Read, Bash, Task
 
 # Onboard — generation and measurement
 
-Prerequisite: `.claude/quality/onboard/scopes.json`, written by `/quality-onboard:scope`.
+Resolve `QUALITY_ROOT` from the environment, then `.luciole.env`, defaulting to
+`.ia/quality`. Every path below is relative to that root.
+
+Prerequisite: `${QUALITY_ROOT}/onboard/scopes.json`, written by `/quality-onboard:scope`.
 If it is missing, stop and point back to that command.
 
 ```
@@ -28,7 +31,7 @@ Agent(subagent_type: "candidate-generator", prompt:
   sample:
     - … (the files to read, copied from scopes.json)
   refDir: ${CLAUDE_PLUGIN_ROOT}/skills/onboard/references
-  output: .claude/quality/onboard/candidates/entity.json
+  output: ${QUALITY_ROOT}/onboard/candidates/entity.json
 )
 ```
 
@@ -64,7 +67,7 @@ pass per distinct floor. Only pass `--min-population` to deliberately override w
 was fixed at step 1.
 
 It projects the live candidates onto `measure-candidates`, writes
-`.claude/quality/onboard/measures.json`, then reports the verdicts. `STATIC` and `SEMANTIC`
+`${QUALITY_ROOT}/onboard/measures.json`, then reports the verdicts. `STATIC` and `SEMANTIC`
 are kept; the others go back to `a-revoir` (to-review), **without discarding anything**. Details in
 "How measurement classifies" (`candidate-schema.md`).
 

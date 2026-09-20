@@ -18,7 +18,7 @@ function makeRepo() {
   sh('git config user.email t@t.t')
   sh('git config user.name t')
 
-  const cdir = join(root, '.claude', 'quality', 'code', 'constraints')
+  const cdir = join(root, '.ia', 'quality', 'code', 'constraints')
   mkdirSync(join(cdir, 'conventions'), { recursive: true })
   mkdirSync(join(cdir, 'decisions'), { recursive: true })
 
@@ -140,9 +140,30 @@ GAT-002 | present | strict_types | MUST declare strict_types | gate!=@legacy
   return { root, sh }
 }
 
-function run(root, args = []) {
-  return spawnSync(process.execPath, [SCRIPT, ...args], { cwd: root, encoding: 'utf8' })
+function run(root, args = [], env = {}) {
+  return spawnSync(process.execPath, [SCRIPT, ...args], {
+    cwd: root,
+    encoding: 'utf8',
+    env: { ...process.env, QUALITY_ROOT: '', ...env },
+  })
 }
+
+test('QUALITY_ROOT relocates the constraints outside the harness directory', () => {
+  const { root } = makeRepo()
+  const custom = join(root, '.quality-artifacts', 'code', 'constraints')
+  mkdirSync(custom, { recursive: true })
+  writeFileSync(join(root, '.luciole.env'), 'QUALITY_ROOT=".quality-artifacts"\n')
+  writeFileSync(join(custom, 'portable.md'), `---
+paths:
+  - "src/**/*.php"
+---
+## Semantic Rules
+- MUST: portable constraint root
+`)
+
+  const data = JSON.parse(run(root, ['src/Acme/FooApiClient.php']).stdout)
+  assert.deepEqual(Object.keys(data.constraints), ['portable'])
+})
 
 test('identical basenames (conventions/ + decisions/) → ONE JSON key, rules merged', () => {
   const { root } = makeRepo()
@@ -183,7 +204,7 @@ test('constraint at the root of constraints/ (outside a subdirectory) is discove
 // pattern (the grammar forbids `!`) separates them.
 test('`exclude:` removes files from the population, for every rule of the constraint', () => {
   const { root, sh } = makeRepo()
-  const cdir = join(root, '.claude', 'quality', 'code', 'constraints')
+  const cdir = join(root, '.ia', 'quality', 'code', 'constraints')
   writeFileSync(join(cdir, 'conventions', 'command.md'), `---
 paths:
   - "src/Command/**/*.php"
@@ -213,7 +234,7 @@ CMD-001 | present | readonly class | a command message MUST be readonly
 
 test('without `exclude:`, the handler enters the population and puts the rule in violation', () => {
   const { root, sh } = makeRepo()
-  const cdir = join(root, '.claude', 'quality', 'code', 'constraints')
+  const cdir = join(root, '.ia', 'quality', 'code', 'constraints')
   writeFileSync(join(cdir, 'conventions', 'command.md'), `---
 paths:
   - "src/Command/**/*.php"
@@ -496,7 +517,7 @@ test('path with a space: matched and checked (unquoted word splitting in bash)',
 
 test('rule message with a quote and a tab: valid JSON', () => {
   const { root } = makeRepo()
-  const cdir = join(root, '.claude', 'quality', 'code', 'constraints')
+  const cdir = join(root, '.ia', 'quality', 'code', 'constraints')
   writeFileSync(join(cdir, 'conventions', 'quoted.md'), `---
 paths:
   - "src/**/*ApiClient.php"
@@ -517,7 +538,7 @@ Q-001 | absent | neverThere | the message carries a "quote" and a\ttab
 
 test('invalid regex: logged as invalid, never silently compliant', () => {
   const { root } = makeRepo()
-  const cdir = join(root, '.claude', 'quality', 'code', 'constraints')
+  const cdir = join(root, '.ia', 'quality', 'code', 'constraints')
   writeFileSync(join(cdir, 'conventions', 'broken.md'), `---
 paths:
   - "src/**/*ApiClient.php"
@@ -539,7 +560,7 @@ BAD-001 | absent | ( | uncompilable regex
 
 test('POSIX class in a regex: translated, not rejected (grep -P supported it)', () => {
   const { root } = makeRepo()
-  const cdir = join(root, '.claude', 'quality', 'code', 'constraints')
+  const cdir = join(root, '.ia', 'quality', 'code', 'constraints')
   writeFileSync(join(cdir, 'conventions', 'posix.md'), `---
 paths:
   - "src/**/*ApiClient.php"
@@ -559,7 +580,7 @@ POS-001 | present | class [[:upper:]][[:alnum:]]+ | class name in PascalCase
 
 test('{a,b} glob: expanded (the braces used to be matched literally → dead glob)', () => {
   const { root } = makeRepo()
-  const cdir = join(root, '.claude', 'quality', 'code', 'constraints')
+  const cdir = join(root, '.ia', 'quality', 'code', 'constraints')
   writeFileSync(join(cdir, 'conventions', 'braces.md'), `---
 paths:
   - "src/**/*{ApiClient,Repository}.php"
@@ -580,7 +601,7 @@ paths:
 
 test('{a,b} in the EXTENSION: the upstream filter expands it — `*.{ts,js}` used to answer no_files in diff/directory mode', () => {
   const { root } = makeRepo()
-  const cdir = join(root, '.claude', 'quality', 'code', 'constraints')
+  const cdir = join(root, '.ia', 'quality', 'code', 'constraints')
   writeFileSync(join(cdir, 'conventions', 'scripts.md'), `---
 paths:
   - "src/**/*.{ts,js}"
@@ -609,7 +630,7 @@ SCR-001 | absent | console\\.log | MUST NOT log to the console
 // `path:line`. Without `line`, the orchestrator couldn't keep that promise — or had to invent it.
 test('`absent` violation: line number of the offending line', () => {
   const { root } = makeRepo()
-  const cdir = join(root, '.claude', 'quality', 'code', 'constraints')
+  const cdir = join(root, '.ia', 'quality', 'code', 'constraints')
   writeFileSync(join(cdir, 'conventions', 'nodump.md'), `---
 paths:
   - "src/**/*ApiClient.php"
@@ -632,7 +653,7 @@ ND-001 | absent | var_dump | no var_dump in production
 
 test('multi-line `absent` violation: every line, cap never silent', () => {
   const { root } = makeRepo()
-  const cdir = join(root, '.claude', 'quality', 'code', 'constraints')
+  const cdir = join(root, '.ia', 'quality', 'code', 'constraints')
   writeFileSync(join(cdir, 'conventions', 'nodump.md'), `---
 paths:
   - "src/**/*ApiClient.php"
@@ -682,7 +703,7 @@ test('file deleted in the diff: out of scope (0 matches ≠ violation)', () => {
 test('feedback: an id present in two merged files appears only once', () => {
   const { root } = makeRepo()
   // decisions/api-client.md redeclares the static rule from conventions/api-client.md
-  appendFileSync(join(root, '.claude', 'quality', 'code', 'constraints', 'decisions', 'api-client.md'), `
+  appendFileSync(join(root, '.ia', 'quality', 'code', 'constraints', 'decisions', 'api-client.md'), `
 ## Static Rules
 \`\`\`rules
 API-001 | present | readonly | duplicate id across merged files
@@ -712,7 +733,7 @@ function makeTsRepo(extra = {}) {
   sh('git config user.email t@t.t')
   sh('git config user.name t')
 
-  const cdir = join(root, '.claude', 'quality', 'code', 'constraints')
+  const cdir = join(root, '.ia', 'quality', 'code', 'constraints')
   mkdirSync(cdir, { recursive: true })
   writeFileSync(join(cdir, 'service.md'), `---
 paths:
@@ -862,7 +883,7 @@ test('no constraints → narrowing disabled, no false no_files', () => {
   sh('git init -q')
   sh('git config user.email t@t.t')
   sh('git config user.name t')
-  mkdirSync(join(root, '.claude', 'quality', 'code', 'constraints'), { recursive: true })
+  mkdirSync(join(root, '.ia', 'quality', 'code', 'constraints'), { recursive: true })
   writeFileSync(join(root, 'README.md'), 'doc\n')
   sh('git add -A')
   sh('git commit -qm init')
@@ -1013,7 +1034,7 @@ test('gate: `files` carries the triggered population, not the whole glob', () =>
 
 test('gate that fails to compile → invalid rule, never silently unfiltered', () => {
   const { root } = makeRepo()
-  const cdir = join(root, '.claude', 'quality', 'code', 'constraints', 'conventions')
+  const cdir = join(root, '.ia', 'quality', 'code', 'constraints', 'conventions')
   writeFileSync(join(cdir, 'gated.md'), `---
 paths:
   - "lib/**/*.php"

@@ -1,7 +1,7 @@
 # Structure of a candidates file
 
 One JSON file per analyzed file type, in
-`.claude/quality/onboard/candidates/{slug}.json`.
+`${QUALITY_ROOT}/onboard/candidates/{slug}.json`.
 
 This file is the working state: it carries both retained AND discarded rules, with
 their evidence. It is not the deliverable — the deliverable is the markdown generated
@@ -172,7 +172,7 @@ Cite only files **actually read** — a file absent from the project doesn't app
 ## `scopes.json`
 
 The scope contract, fixed once at step 1, re-read by every subsequent command.
-Path: `.claude/quality/onboard/scopes.json`.
+Path: `${QUALITY_ROOT}/onboard/scopes.json`.
 
 ```json
 { "scopes": [ { "slug": "entity", "prefix": "ENT", "glob": "…", "marker": "…",

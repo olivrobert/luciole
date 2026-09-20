@@ -7,7 +7,7 @@ Before, the reviewer would return its prose and the orchestrator would edit the 
 itself — so it had to load every JSON, every finding, for every scope. Disk holds this
 role better than a context, and it holds it from one command to the next.
 
-Path: `.claude/quality/onboard/findings/{slug}.json`.
+Path: `${QUALITY_ROOT}/onboard/findings/{slug}.json`.
 
 ## Structure
 

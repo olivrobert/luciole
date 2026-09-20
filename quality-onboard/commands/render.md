@@ -5,6 +5,9 @@ allowed-tools: Read, Bash
 
 # Onboard — rendering, gate, and human validation
 
+Resolve `QUALITY_ROOT` from the environment, then `.luciole.env`, defaulting to
+`.ia/quality`. Every path below is relative to that root.
+
 The first three steps are deterministic. The last one doesn't re-judge the
 candidates one by one: it asks the human whether they accept the complete
 deliverable.
@@ -15,7 +18,7 @@ deliverable.
 node ${CLAUDE_PLUGIN_ROOT}/skills/onboard/scripts/render-constraints.mjs
 ```
 
-Generates `.claude/quality/code/constraints/{slug}.md` from each JSON, following
+Generates `${QUALITY_ROOT}/code/constraints/{slug}.md` from each JSON, following
 `references/constraint-format.md`. The markdown is the deliverable; it is never
 hand-edited, it is regenerated. The file's title comes from `scope.label`, or
 the `slug` if none.
@@ -31,7 +34,7 @@ node ${CLAUDE_PLUGIN_ROOT}/skills/onboard/scripts/render-backlog.mjs
 ```
 
 Projects rules carrying an `automatable` field into
-`.claude/quality/code/lint-backlog.md`, following `references/lint-backlog-format.md`.
+`${QUALITY_ROOT}/code/lint-backlog.md`, following `references/lint-backlog-format.md`.
 The existing file isn't blindly overwritten: a line already marked `fait` (done) keeps
 its status.
 
@@ -70,7 +73,7 @@ Only after an explicitly positive response:
 node ${CLAUDE_PLUGIN_ROOT}/skills/onboard/scripts/approval.mjs approve
 ```
 
-This script writes `.claude/quality/onboard/approval.json`, hash-linked to the exact
+This script writes `${QUALITY_ROOT}/onboard/approval.json`, hash-linked to the exact
 content of all constraints files. Any later regeneration or edit invalidates
 this approval.
 

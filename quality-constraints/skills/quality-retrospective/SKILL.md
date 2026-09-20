@@ -9,14 +9,17 @@ effort: high
 
 # Quality Retrospective
 
-NON-BLOCKING analysis. Consumes material already collected at zero cost (the constraint reports written by `quality-constraints-verify`, and the measurement blocks they carry) and derives proposals to improve the `.claude/quality/code/constraints/` files. PROPOSES only: never edits a constraint file, never fixes code, never commits. Appending to `tool-candidates.md` (Phase 2) is not an exception — that file changes what no checker enforces.
+Resolve `QUALITY_ROOT` from the environment, then `.luciole.env`, defaulting to
+`.ia/quality`.
+
+NON-BLOCKING analysis. Consumes material already collected at zero cost (the constraint reports written by `quality-constraints-verify`, and the measurement blocks they carry) and derives proposals to improve the `${QUALITY_ROOT}/code/constraints/` files. PROPOSES only: never edits a constraint file, never fixes code, never commits. Appending to `tool-candidates.md` (Phase 2) is not an exception — that file changes what no checker enforces.
 
 ## Input
 
 **Raw arguments:** $ARGUMENTS
 
-- `--reports=<dir>` — where `quality-constraints-verify` wrote its reports. Default `.claude/quality/code/reports/constraints/` if it exists. Read recursively: a runner isolating a batch under `reports/<BATCH-ID>/` is covered. Resolve ONCE as `REPORTS_DIR`. No folder at all → no material.
-- `--out=<dir>` — where the proposal file goes. Default `.claude/quality/code/`. A runner owning a per-ticket folder passes it so the proposal lives with the run's artifacts (from a git worktree, an untracked file under `.claude/` disappears with the worktree). Resolve ONCE as `OUT_DIR`, use it for every path in Phases 3 and 4.
+- `--reports=<dir>` — where `quality-constraints-verify` wrote its reports. Default `${QUALITY_ROOT}/code/reports/constraints/` if it exists. Read recursively: a runner isolating a batch under `reports/<BATCH-ID>/` is covered. Resolve ONCE as `REPORTS_DIR`. No folder at all → no material.
+- `--out=<dir>` — where the proposal file goes. Default `${QUALITY_ROOT}/code/`. A runner owning a per-ticket folder passes it so the proposal lives with the run's artifacts (from a git worktree, an untracked file under `.claude/` disappears with the worktree). Resolve ONCE as `OUT_DIR`, use it for every path in Phases 3 and 4.
 
 ## Phase 1: Gather the material — 15 reads max
 
@@ -27,7 +30,7 @@ NON-BLOCKING analysis. Consumes material already collected at zero cost (the con
    - `node ${CLAUDE_PLUGIN_ROOT}/bin/rule-stats lint` with the same `--reports` — reports whose block is missing, unreadable or left with `null` verdicts. Not a constraint flaw: a verification run that lost its measurement. Count them for Phase 4, propose nothing about them.
    - `node ${CLAUDE_PLUGIN_ROOT}/skills/quality-constraints-verify/scripts/match-constraints.js --sweep | node ${CLAUDE_PLUGIN_ROOT}/bin/rule-stats dead-globs -` — per-glob population over the whole tracked tree. A glob at 0 there is dead; a run-scoped 0 proves nothing. If it fails or is slow, skip it and say so.
 
-3. **Shape models** — read `.claude/quality/onboard/scopes.json` (skip silently if absent). A scope with no `model` is MODEL PROMOTION material.
+3. **Shape models** — read `${QUALITY_ROOT}/onboard/scopes.json` (skip silently if absent). A scope with no `model` is MODEL PROMOTION material.
 
 NO material (no report) → display `Retrospective: no material`, emit the verdict with `proposals: 0`, finish.
 
@@ -52,8 +55,8 @@ Aggregate violations BY rule across the reports, cross-reference with `rule-stat
 
 **TOOL PROMOTION.** A rule nobody violates is a candidate for cheaper enforcement. Destination depends on whether the project is onboarded:
 
-- **Onboarded** (`.claude/quality/onboard/candidates/{key}.json` exists for the rule's constraint key): `lint-backlog.md` is regenerated from that JSON, so never append to it by hand. Write a regular proposal (Phase 3) whose **Proposal** is: set `automatable: { "tool": "...", "nature": "rejette", "note": "..." }` on rule `{id}` in `candidates/{key}.json`; the next `quality-onboard:render` projects it into the backlog. Skip a rule already carrying `automatable` or `via`.
-- **Hand-maintained** (no candidates JSON): append to `.claude/quality/code/tool-candidates.md` (create with a `# Tool Candidates` header if missing), skipping rules already listed:
+- **Onboarded** (`${QUALITY_ROOT}/onboard/candidates/{key}.json` exists for the rule's constraint key): `lint-backlog.md` is regenerated from that JSON, so never append to it by hand. Write a regular proposal (Phase 3) whose **Proposal** is: set `automatable: { "tool": "...", "nature": "rejette", "note": "..." }` on rule `{id}` in `candidates/{key}.json`; the next `quality-onboard:render` projects it into the backlog. Skip a rule already carrying `automatable` or `via`.
+- **Hand-maintained** (no candidates JSON): append to `${QUALITY_ROOT}/code/tool-candidates.md` (create with a `# Tool Candidates` header if missing), skipping rules already listed:
 
 ```markdown
 ## {rule-id} — {short title}
@@ -66,11 +69,11 @@ Measured population: {files_seen} file observations over {runs} runs, 0 violatio
 
 Name the project's actual tool (PHPStan, ESLint, mypy, Deptrac…); purely syntactic or forbidden-dependency rules target the formatter or the dependency checker instead.
 
-For EACH proposal, read the target constraint file (`.claude/quality/code/constraints/` at any depth: flat `{slug}.md` when onboarded, `conventions/` and `decisions/` subfolders when hand-maintained) to quote the EXACT current rule and write the proposed rule in the file's own format (onboarded semantic bullets carry `Trigger: … Anchor: … (m/t)`, hand-written ones `MUST/SHOULD … — <why>`).
+For EACH proposal, read the target constraint file (`${QUALITY_ROOT}/code/constraints/` at any depth: flat `{slug}.md` when onboarded, `conventions/` and `decisions/` subfolders when hand-maintained) to quote the EXACT current rule and write the proposed rule in the file's own format (onboarded semantic bullets carry `Trigger: … Anchor: … (m/t)`, hand-written ones `MUST/SHOULD … — <why>`).
 
 ## Phase 3: Write the proposal
 
-`tool-candidates.md` stays at `.claude/quality/code/tool-candidates.md`, a cumulative backlog the project commits; its entries are not repeated here but count in `proposals`. Everything else goes to `OUT_DIR`.
+`tool-candidates.md` stays at `${QUALITY_ROOT}/code/tool-candidates.md`, a cumulative backlog the project commits; its entries are not repeated here but count in `proposals`. Everything else goes to `OUT_DIR`.
 
 **If ≥ 1 proposal targeting a constraint file, candidates JSON or scopes.json, OR ≥ 1 annotation** — write `{OUT_DIR}/constraints-proposal-{date +%Y-%m-%d}.md`. One file per day: a second run the same day OVERWRITES it (re-read its annotations block first and carry the entries over — they are deduplicated on `ticket + rule + reason`, so repeating one costs nothing, losing one costs a measurement), older dated files are never touched, and no undated `constraints-proposal.md` is ever written.
 
@@ -78,7 +81,7 @@ For EACH proposal, read the target constraint file (`.claude/quality/code/constr
 # Constraints Proposal — {date +%Y-%m-%d}
 
 ## P1 — {CATEGORY}: {rule/ID}
-- **Constraint file**: .claude/quality/code/constraints/{file}.md (or its candidates JSON for an `automatable` proposal, or scopes.json for a MODEL PROMOTION)
+- **Constraint file**: ${QUALITY_ROOT}/code/constraints/{file}.md (or its candidates JSON for an `automatable` proposal, or scopes.json for a MODEL PROMOTION)
 - **Current rule**: {exact text, or "(none)" for a missing rule}
 - **Evidence**: {reports concerned, `rule-stats report` rows, short excerpts}
 - **Proposal**: {exact text of the new/reworded rule}

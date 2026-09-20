@@ -13,7 +13,7 @@
 //   {"ts":"…","annotations":[{"rule":"…","ticket":"…","verdict":"false-positive",
 //                              "reason":"…","n":1}]}
 //
-// Why not a store: the previous append-only log lived under `.claude/quality/code/` and
+// Why not a store: the previous append-only log lived under `.ia/quality/code/` and
 // was deleted twice during re-onboards, needed `merge=union` to survive parallel
 // worktrees, and depended on a hook-like extra command after every run that nobody
 // called for the false positives. The reports are committed with their ticket and have a

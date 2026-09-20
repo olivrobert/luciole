@@ -1,5 +1,5 @@
 ---
-description: Install the constraint-lint, rule-stats and measure-candidates shims into ~/.local/bin — for terminal and CI use, and as the PATH fallback of quality-onboard when the engine isn't found next to it.
+description: Install the constraint-check, constraint-lint, rule-stats and measure-candidates shims into ~/.local/bin — for terminal and CI use, and as the PATH fallback of quality-onboard when the engine isn't found next to it.
 allowed-tools: Bash(mkdir *), Bash(printf *), Bash(chmod *), Bash(command *), Bash(echo *), Bash(test *), Read
 ---
 
@@ -15,20 +15,23 @@ Run:
 
 ```bash
 mkdir -p ~/.local/bin
+printf '#!/usr/bin/env bash\nexec node "%s/bin/constraint-check" "$@"\n' "${CLAUDE_PLUGIN_ROOT}" > ~/.local/bin/constraint-check
 printf '#!/usr/bin/env bash\nexec node "%s/bin/constraint-lint" "$@"\n' "${CLAUDE_PLUGIN_ROOT}" > ~/.local/bin/constraint-lint
 printf '#!/usr/bin/env bash\nexec node "%s/bin/rule-stats" "$@"\n' "${CLAUDE_PLUGIN_ROOT}" > ~/.local/bin/rule-stats
 printf '#!/usr/bin/env bash\nexec node "%s/bin/measure-candidates" "$@"\n' "${CLAUDE_PLUGIN_ROOT}" > ~/.local/bin/measure-candidates
-chmod +x ~/.local/bin/constraint-lint ~/.local/bin/rule-stats ~/.local/bin/measure-candidates
+chmod +x ~/.local/bin/constraint-check ~/.local/bin/constraint-lint ~/.local/bin/rule-stats ~/.local/bin/measure-candidates
 ```
 
-Then verify all three resolve:
+Then verify all four resolve:
 
 ```bash
-command -v constraint-lint rule-stats measure-candidates
+command -v constraint-check constraint-lint rule-stats measure-candidates
 ```
 
 If they don't, `~/.local/bin` is missing from the PATH — tell the user to add
 `export PATH="$HOME/.local/bin:$PATH"` to their shell profile. Never edit shell profiles
 yourself.
 
-Report what was installed and where.
+Report what was installed and where. Mention that `constraint-check` needs
+`TYPESAFE_API_KEY` for semantic checks; it may be exported by the shell/CI or stored as
+`TYPESAFE_API_KEY=...` in the checked project's ignored `.env.local` file.

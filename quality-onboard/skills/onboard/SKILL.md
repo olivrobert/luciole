@@ -6,6 +6,11 @@ disable-model-invocation: true
 
 # Onboard
 
+`QUALITY_ROOT` is the harness-independent state root. `/quality-onboard:scope` asks for it
+once and stores it in the project-root `.luciole.env`; a process environment variable can
+override it, and `.ia/quality` remains the fallback. Both `code/` deliverables and
+`onboard/` intermediate state live below it.
+
 Generates the constraint files (`constraints/{slug}.md`) that `quality-constraints` **enforces** during review and that scaffolding skills follow when creating classes. A deviation from `SPEC.md` produces a silently inert rule, hence the deterministic steps that frame the agents: measurement and the gate.
 
 Determinism measures, checks shape, flags — it never **deletes a rule**: a low ratio can mean "wrong" as much as "poorly scoped". Substantive review decides; the human validates once, at the end, the whole delivered set.
@@ -62,13 +67,13 @@ The population is `glob - exclude`, recomputed by the scripts and never enumerat
 ## The artifacts
 
 ```
-.claude/quality/onboard/scopes.json             step 1
-.claude/quality/onboard/candidates/{slug}.json  steps 2-6
-.claude/quality/onboard/findings/{slug}.json    steps 5-6
-.claude/quality/onboard/measures.json           step 4
-.claude/quality/code/constraints/{slug}.md      step 7  — the deliverable
-.claude/quality/code/lint-backlog.md            step 8
-.claude/quality/onboard/approval.json           step 10 — approval of the delivered hash
+${QUALITY_ROOT}/onboard/scopes.json             step 1
+${QUALITY_ROOT}/onboard/candidates/{slug}.json  steps 2-6
+${QUALITY_ROOT}/onboard/findings/{slug}.json    steps 5-6
+${QUALITY_ROOT}/onboard/measures.json           step 4
+${QUALITY_ROOT}/code/constraints/{slug}.md      step 7  — the deliverable
+${QUALITY_ROOT}/code/lint-backlog.md            step 8
+${QUALITY_ROOT}/onboard/approval.json           step 10 — approval of the delivered hash
 .claude/skills/quality-{slug}/SKILL.md          step 11
 .claude/skills/skill-mapping.md                 step 11 — the file → skill table
 ```

@@ -20,10 +20,7 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { basename, extname, join } from 'node:path'
 import { runEngine } from './lib/engine.mjs'
-
-const CONSTRAINTS_DIR = '.claude/quality/code/constraints'
-const CANDIDATES_DIR = '.claude/quality/onboard/candidates'
-const MEASURES_FILE = '.claude/quality/onboard/measures.json'
+import { CANDIDATES_DIR, CONSTRAINTS_DIR, MEASURES_FILE } from './lib/candidates.mjs'
 
 // A `## ` closes the semantic section, a `### ` stays inside it (SPEC §4).
 const SEMANTIC_OPEN = /^##[ \t]+Semantic/

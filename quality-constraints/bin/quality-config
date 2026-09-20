@@ -1,0 +1,15 @@
+#!/usr/bin/env node
+'use strict'
+
+const { verifyEngine } = require('../lib/project-paths.js')
+
+try {
+  if (process.argv.length !== 3 || process.argv[2] !== 'verify-engine') {
+    process.stderr.write('Usage: quality-config verify-engine\n')
+    process.exit(2)
+  }
+  process.stdout.write(`${verifyEngine()}\n`)
+} catch (error) {
+  process.stderr.write(`quality-config: ${error.message}\n`)
+  process.exit(2)
+}

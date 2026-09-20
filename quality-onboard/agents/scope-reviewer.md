@@ -20,7 +20,7 @@ candidates JSON above all — breaks the separation the whole pipeline relies on
 The prompt gives you:
 
 - `slug` — the scope to review
-- `candidates` — the measured JSON to read (`.claude/quality/onboard/candidates/{slug}.json`)
+- `candidates` — the measured JSON to read (`${QUALITY_ROOT}/onboard/candidates/{slug}.json`)
 - `refDir` — references directory
 - `findings` — path of the findings JSON to write
 

@@ -2,7 +2,8 @@
 // render-review — step 10. Announces to the human what was rendered and where to read it.
 // Rule details live in the constraints files: we don't copy them here.
 
-import { loadCandidates, rules, scopeLabel } from './lib/candidates.mjs'
+import { CONSTRAINTS_DIR, loadCandidates, rules, scopeLabel } from './lib/candidates.mjs'
+import { join } from 'node:path'
 
 const docs = loadCandidates()
 const broken = docs.filter((entry) => entry.error)
@@ -40,7 +41,7 @@ for (const { doc } of docs) {
   ].filter(Boolean).join(', ')
 
   lines.push(`- ${scopeLabel(doc.scope)} — ${kept.length} rule(s)${detail ? ` (${detail})` : ''}`)
-  lines.push(`  .claude/quality/code/constraints/${doc.scope.slug}.md`)
+  lines.push(`  ${join(CONSTRAINTS_DIR, `${doc.scope.slug}.md`)}`)
 }
 
 if (total === 0) {

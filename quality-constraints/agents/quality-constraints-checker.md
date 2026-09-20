@@ -31,7 +31,9 @@ You read the files yourself, then analyze the code against the rules and report 
 4. ... repeat for ALL numbered rules — checking every rule against every file is mandatory, even though only failures are reported
 5. Output the result in the format below
 
-If you skip a rule, the check is INVALID.
+If you skip a rule or cannot read a complete file, the check is INVALID. Report status
+ERROR and list the affected files/rules and reason; never attest full COVERAGE or PASS
+for material you did not check.
 </procedure>
 
 <output-format>
@@ -47,7 +49,7 @@ COVERAGE:
 VIOLATIONS:
 - {filename}:{line} #{rule_number} ({MUST|SHOULD}): {what's wrong}
 
-status: PASS | FAIL
+status: PASS | FAIL | ERROR
 violations: {total_count}
 ```
 

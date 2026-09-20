@@ -5,8 +5,27 @@ allowed-tools: Read, Grep, Glob, Bash, Write
 
 # Onboard — scopes
 
+Resolve `QUALITY_ROOT` from the environment, then `.luciole.env`, defaulting to
+`.ia/quality`. Every path below is relative to that root.
+
 First command in the pipeline. It decides **once** what the following ones will
 never rediscover.
+
+## 0. Configure the quality root
+
+If `.luciole.env` does not exist at the project root, ask the user where the complete
+quality state should live and which semantic verification engine to use (`agent` or `jev`).
+Suggest `.ia/quality` and `agent`, but accept another project-relative or absolute path.
+Then persist both answers:
+
+```bash
+node ${CLAUDE_PLUGIN_ROOT}/skills/onboard/scripts/configure-root.mjs '<chosen path>' '<agent|jev>'
+```
+
+The resulting file contains `QUALITY_ROOT="…"` and `QUALITY_VERIFY_ENGINE="…"`; it carries
+no secret and should be committed so every harness and contributor resolves the same
+configuration. If the file already exists, do not ask again. Explicit process environment
+variables remain temporary overrides and do not rewrite the file.
 
 ## 1. Survey the types
 
@@ -74,7 +93,7 @@ different floors aren't comparable.
 
 ## 3. Write and validate
 
-Write `.claude/quality/onboard/scopes.json`:
+Write `${QUALITY_ROOT}/onboard/scopes.json`:
 
 ```json
 { "scopes": [ { "slug": "…", "prefix": "…", "glob": "…", "marker": "…",

@@ -11,7 +11,8 @@
 //   verify-skills [--project <dir>]   # default: cwd
 
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
+import { SCOPES_FILE } from './lib/candidates.mjs'
 
 const argv = process.argv.slice(2)
 const i = argv.indexOf('--project')
@@ -20,7 +21,7 @@ const projectRoot = i === -1 ? process.cwd() : argv[i + 1]
 const errors = []
 const fail = (file, msg) => errors.push(`${file}: ${msg}`)
 
-const scopesFile = join(projectRoot, '.claude/quality/onboard/scopes.json')
+const scopesFile = resolve(projectRoot, SCOPES_FILE)
 if (!existsSync(scopesFile)) {
   console.log('verify-skills: scopes.json absent — nothing to check')
   process.exit(2)
@@ -36,14 +37,14 @@ for (const scope of scopes) {
     fail(`.claude/skills/${name}/SKILL.md`, 'absent — every scope gets its skill')
     continue
   }
-  // A skill folder contains only SKILL.md. Everything else — a leftover reference.md,
-  // a snippet, a commented-out variant — is waiting to be copied in, and nothing in the
-  // skill points to it.
-  const stray = readdirSync(dir).filter((e) => e !== 'SKILL.md')
-  if (stray.length > 0) {
-    fail(`.claude/skills/${name}`, `must contain only SKILL.md — also found: ${stray.join(', ')}`)
-  }
   const text = readFileSync(skillFile, 'utf8')
+  // A skill folder may carry supporting files — a form model, a script, an asset — as long
+  // as SKILL.md routes to them. What has no place there is the orphan: a leftover
+  // reference.md, a snippet, a commented-out variant that nothing in the skill points to.
+  const orphans = readdirSync(dir).filter((e) => e !== 'SKILL.md' && !text.includes(e))
+  if (orphans.length > 0) {
+    fail(`.claude/skills/${name}`, `nothing in SKILL.md points to: ${orphans.join(', ')} — remove it or route to it`)
+  }
   // A rendered skill carries no token: one still present means generation didn't finish.
   const left = [...new Set([...text.matchAll(/\{[A-Z_]+\}/g)].map((m) => m[0]))]
   if (left.length > 0) fail(`.claude/skills/${name}/SKILL.md`, `unresolved token: ${left.join(', ')} — generation incomplete`)

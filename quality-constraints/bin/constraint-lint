@@ -14,7 +14,7 @@
 // truthfulness (the producer validates it against the full population).
 //
 // Usage:
-//   constraint-lint                       # .claude/quality/code/constraints
+//   constraint-lint                       # .ia/quality/code/constraints
 //   constraint-lint <dir|file>...         # e.g. a plugin's baseline
 //   constraint-lint --strict              # warnings counted as errors
 //   constraint-lint --quiet               # print only the summary
@@ -39,6 +39,7 @@ const {
   regexError,
   semanticIdentityText,
 } = require('../lib/parse-constraints.js')
+const { constraintsDir } = require('../lib/project-paths.js')
 
 function main(argv) {
   let strict = false
@@ -57,7 +58,10 @@ function main(argv) {
     } else targets.push(arg)
   }
 
-  if (targets.length === 0) targets.push(path.join(repoRoot(), '.claude', 'quality', 'code', 'constraints'))
+  if (targets.length === 0) {
+    const root = repoRoot()
+    targets.push(path.resolve(root, constraintsDir(process.env, root)))
+  }
 
   const files = []
   const missing = []
@@ -353,7 +357,7 @@ function isFile(target) {
 }
 
 function help() {
-  return `constraint-lint — conformance of constraint files to the format read by match-constraints.\n\nUsage:\n  constraint-lint                       # .claude/quality/code/constraints\n  constraint-lint <dir|file>...         # e.g. a plugin's baseline\n  constraint-lint --strict              # warnings counted as errors\n  constraint-lint --quiet               # print only the summary\n`
+  return `constraint-lint — conformance of constraint files to the format read by match-constraints.\n\nUsage:\n  constraint-lint                       # .ia/quality/code/constraints\n  constraint-lint <dir|file>...         # e.g. a plugin's baseline\n  constraint-lint --strict              # warnings counted as errors\n  constraint-lint --quiet               # print only the summary\n`
 }
 
 process.exitCode = main(process.argv.slice(2))

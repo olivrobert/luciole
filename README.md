@@ -23,18 +23,28 @@ the project's existing linters and analysers.
   regex probes across each scope's full file list; review examines the evidence and exceptions.
   A probe's match ratio is evidence about a pattern, not proof of the full semantic rule.
 - **Verification:** static rules use line-by-line regex checks without LLM evaluation.
-  Semantic requirements are assessed by agents; orchestration and reporting also use an agent.
+  Semantic requirements are assessed by agents or Jev. The standalone Jev CLI also handles
+  orchestration and reporting without an agent.
 - **Retrospective:** recorded results help identify unused scopes and rules worth revisiting
   or moving into existing tooling. Rule changes require a separate update and approval.
 
 The matcher derives the file types in scope from the constraints, and onboarding derives
 its scopes from the repository. The engine has no fixed language list; its static checks
-operate on text, and semantic checks depend on agent judgment. The examples below use
+operate on text, and semantic checks use the selected engine's judgment. The examples below use
 Symfony because that is where the kit was developed.
+
+Paths below use `QUALITY_ROOT`, a harness-independent artifact root. Onboarding asks for
+it once and writes the choice to the project-root `.luciole.env`; the process environment
+can override it, and `.ia/quality` is the fallback. It relocates the `code/`
+deliverables and `onboard/` state together.
+
+The same file records `QUALITY_VERIFY_ENGINE="agent"` or `"jev"`. The verify command uses
+that default, while `--engine=agent|jev` selects a different engine for one run. Static
+rules always stay local; only semantic evaluation changes engine.
 
 ## What a constraint looks like
 
-One plain Markdown file per file type, in `.claude/quality/code/constraints/`:
+One plain Markdown file per file type, in `${QUALITY_ROOT}/code/constraints/`:
 
 ````markdown
 ---
@@ -56,8 +66,9 @@ CTL-004 | present | RoutePrefix::   | MUST use RoutePrefix constants | via=phpst
 - SHOULD: Return the entity (created or modified)
 ````
 
-Static rules run as a regex, line by line, in a script. Semantic MUST rules are assessed by
-an agent; SHOULD rules are reported as advisories. A `via=` annotation declares that your
+Static rules run as a regex, line by line, in a script. Semantic rules are assessed by
+the selected engine; SHOULD findings never block. Constraints containing only semantic
+SHOULD rules stay advisory and are not sent to either engine. A `via=` annotation declares that your
 own tooling handles the rule, so the checker skips it. [`SPEC.md`](quality-constraints/SPEC.md)
 defines the format, and `constraint-lint` checks constraint files for format errors.
 
@@ -79,7 +90,7 @@ Then, inside your project:
 
 Onboarding proposes and reviews rules, then writes the constraint files for you to inspect:
 
-- `.claude/quality/code/constraints/` — one constraint file per file type, derived from your
+- `${QUALITY_ROOT}/code/constraints/` — one constraint file per file type, derived from your
   code
 
 After you approve those files, it generates:
@@ -98,11 +109,38 @@ Run verification when you want to check a change against the applicable constrai
 /quality-constraints:quality-constraints-verify              # current git diff
 /quality-constraints:quality-constraints-verify src/Invoice  # a directory
 /quality-constraints:quality-constraints-verify --reports=var/reports  # save reports
+/quality-constraints:quality-constraints-verify --engine=jev         # override the configured engine
+/quality-constraints:quality-constraints-verify --engine=agent       # use agent verification
 ```
+
+For an agent-free semantic check, install the optional binaries with
+`/quality-constraints:install`, then run the TypeSafe-backed CLI:
+
+```bash
+constraint-check                          # current git diff
+constraint-check src/Invoice              # a file or directory
+constraint-check --dry-run --stdout        # inspect requests without calling the API
+```
+
+`constraint-check` always uses Jev. Engine selection through `--engine` or
+`QUALITY_VERIFY_ENGINE` belongs to `/quality-constraints:quality-constraints-verify`.
+
+Static rules still use the same local matcher. Semantic rules and the relevant file
+contents are sent to TypeSafe System One and require `TYPESAFE_API_KEY`. Export it in the
+shell or CI secret store; for local use the CLI also reads `TYPESAFE_API_KEY=...` from the
+checked project's `.env.local` when the variable is absent. Never commit that file—ensure
+the target project ignores it.
+
+The gate passes only when verification is complete and there are no MUST violations;
+SHOULD findings remain warnings with either engine. The CLI exits `0` on success, `1`
+on constraint violations, and `2` on an incomplete check (API errors, missing answers,
+unreadable or oversized files). Files exceeding `--max-chars` (60,000 by default) are
+not sent partially: raise the limit or select the agent engine. Incomplete runs return
+`success: false` with an `errors` count in the verdict.
 
 ```
 ## Constraints Check: FAILED ❌
-Files: 12 | Static: 31 | Semantic: 4 | Violations: 1 | Warnings: 0
+Files: 12 | Static: 31 | Semantic: 4 | Violations: 1 | Warnings: 0 | Errors: 0
 
 - src/Controller/InvoiceController.php:42 CTL-002 (MUST): MUST NOT use ->getDoctrine()
 ```
@@ -112,6 +150,13 @@ the job to invoke the verification workflow and act on the verdict:
 
 ```json
 {"success": false, "violations": 1, "warnings": 0}
+```
+
+An incomplete check has an `INCOMPLETE` report header and blocks even without a detected
+violation. CI must use `success` (or the CLI exit status), not only the violation count:
+
+```json
+{"success": false, "violations": 0, "warnings": 0, "errors": 1}
 ```
 
 ## Applying constraints
@@ -196,7 +241,7 @@ semantic rule to a regex requires checking that the regex expresses it adequatel
 
 | Plugin | What it brings |
 |---|---|
-| **quality-constraints** | The engine: [`SPEC.md`](quality-constraints/SPEC.md) (normative grammar), the matcher, the format linter (`constraint-lint`), the candidate measurer (`measure-candidates`), the measurement projection (`rule-stats`), the verify/review skill, `constraint-update` and `quality-retrospective`. |
+| **quality-constraints** | The engine: [`SPEC.md`](quality-constraints/SPEC.md) (normative grammar), the matcher, the format linter (`constraint-lint`), the optional TypeSafe CLI (`constraint-check`), the candidate measurer (`measure-candidates`), the measurement projection (`rule-stats`), the verify/review skill, `constraint-update` and `quality-retrospective`. |
 | **quality-onboard** | The onboarding layer: `/scope`, `/generate`, `/review`, `/render`, `/skills` (or `/onboard` for the whole run). Generates constraints and scaffolding skills from the project. Depends on `quality-constraints`. |
 
 ## Requirements
@@ -217,9 +262,9 @@ Installing the engine commands on your PATH is optional when using the plugins.
 `quality-constraints/bin` of a repository clone, the plugin cache, then the PATH. The first
 onboarding step (`/quality-onboard:scope`) checks this before any agent runs.
 
-Optional: `/quality-constraints:install` puts `constraint-lint`, `rule-stats` and
-`measure-candidates` on your PATH, for terminal and CI use, or when none of the locations
-above applies.
+Optional: `/quality-constraints:install` puts `constraint-check`, `constraint-lint`,
+`rule-stats` and `measure-candidates` on your PATH, for terminal and CI use, or when none
+of the locations above applies.
 
 </details>
 

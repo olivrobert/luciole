@@ -60,8 +60,8 @@ const path = require('path')
 const crypto = require('crypto')
 const { execFileSync } = require('child_process')
 const { compileRule, globMatcher, parseConstraintFile, parseStaticRule, regexError, semanticIdentityText } = require('../../../lib/parse-constraints.js')
+const { constraintsDir } = require('../../../lib/project-paths.js')
 
-const CONSTRAINTS_DIR = '.claude/quality/code/constraints'
 const VIOLATION_MAX_LINES = 20 // line numbers listed per violation (`lines_total` keeps the real count)
 
 // Grouping (formerly group-constraints.py)
@@ -448,6 +448,7 @@ function main(argv) {
 
   const root = git(['rev-parse', '--show-toplevel']).trim() || process.cwd()
   process.chdir(root)
+  const CONSTRAINTS_DIR = constraintsDir()
 
   let sweep = false
   if (argv[0] === '--sweep') {
@@ -455,7 +456,8 @@ function main(argv) {
     argv = argv.slice(1)
   }
 
-  // After the chdir: CONSTRAINTS_DIR is relative to the repo root.
+  // Resolve only after the chdir so a relative env/default path belongs to the repo root;
+  // a .luciole.env value is resolved against the configuration file itself.
   const codeExt = codeExtensionFilter(CONSTRAINTS_DIR)
 
   let gitMode = false
@@ -520,7 +522,7 @@ function main(argv) {
     groupFiles.get(name).push(cf)
   }
 
-  const out = { constraints: {} }
+  const out = { project_root: root, constraints: {} }
   const sweepOut = {}
   const allMatched = new Set()
 

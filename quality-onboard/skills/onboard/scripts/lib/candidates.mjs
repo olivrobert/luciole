@@ -1,26 +1,29 @@
 // Paths to and access for the candidates JSON, shared by the skill's deterministic scripts.
 //
-// The paths are constants relative to cwd, never parameters: they are fixed by the format
-// (see references/), and a script that accepted an arbitrary folder would allow producing
-// constraints that the review would never look for.
+// The paths are stable relative to cwd. QUALITY_ROOT moves the complete quality state as
+// one unit so neither published artifacts nor intermediate onboarding state bind a harness.
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { qualityRoot } from './project-paths.mjs'
 
-export const CANDIDATES_DIR = '.claude/quality/onboard/candidates'
-export const CONSTRAINTS_DIR = '.claude/quality/code/constraints'
-export const BACKLOG_FILE = '.claude/quality/code/lint-backlog.md'
-export const MEASURE_INPUT = '.claude/quality/onboard/measure-input.json'
-export const MEASURES_FILE = '.claude/quality/onboard/measures.json'
+export const QUALITY_ROOT = qualityRoot()
+export const CODE_DIR = join(QUALITY_ROOT, 'code')
+export const ONBOARD_DIR = join(QUALITY_ROOT, 'onboard')
+export const CANDIDATES_DIR = join(ONBOARD_DIR, 'candidates')
+export const CONSTRAINTS_DIR = join(CODE_DIR, 'constraints')
+export const BACKLOG_FILE = join(CODE_DIR, 'lint-backlog.md')
+export const MEASURE_INPUT = join(ONBOARD_DIR, 'measure-input.json')
+export const MEASURES_FILE = join(ONBOARD_DIR, 'measures.json')
 // Minimal proof that a human validated the exact version of the rendered constraints.
 // The hash it contains becomes stale as soon as a constraints file changes.
-export const APPROVAL_FILE = '.claude/quality/onboard/approval.json'
+export const APPROVAL_FILE = join(ONBOARD_DIR, 'approval.json')
 // The scope contract, fixed once at step 1 and re-read by every subsequent command.
 // Without it, each command would rediscover the scope — and two discoveries don't
 // yield the same `sample`, nor the same `population` if the tree moved.
-export const SCOPES_FILE = '.claude/quality/onboard/scopes.json'
+export const SCOPES_FILE = join(ONBOARD_DIR, 'scopes.json')
 // The reviewer's findings (step 5). They pass through disk, never through the
 // orchestrator's context: that's what makes the run splittable into commands.
-export const FINDINGS_DIR = '.claude/quality/onboard/findings'
+export const FINDINGS_DIR = join(ONBOARD_DIR, 'findings')
 
 export const STATUSES = ['retenu', 'a-revoir', 'ecarte']
 export const STRENGTHS = ['MUST', 'MUST NOT', 'SHOULD', 'SHOULD NOT']

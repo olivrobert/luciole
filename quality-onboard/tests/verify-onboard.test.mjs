@@ -14,7 +14,7 @@ const LINT = join(HERE, '..', '..', 'quality-constraints', 'bin', 'constraint-li
 function runVerify(files, { measures, projectFiles = {} } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'verify-onboard-'))
   const bin = join(root, 'bin')
-  const constraints = join(root, '.claude', 'quality', 'code', 'constraints', 'conventions')
+  const constraints = join(root, '.ia', 'quality', 'code', 'constraints', 'conventions')
   mkdirSync(bin, { recursive: true })
   mkdirSync(constraints, { recursive: true })
   for (const [name, content] of Object.entries(files)) writeFileSync(join(constraints, name), content)
@@ -24,8 +24,8 @@ function runVerify(files, { measures, projectFiles = {} } = {}) {
     writeFileSync(target, content)
   }
   if (measures !== undefined) {
-    mkdirSync(join(root, '.claude', 'quality', 'onboard'), { recursive: true })
-    writeFileSync(join(root, '.claude', 'quality', 'onboard', 'measures.json'), measures)
+    mkdirSync(join(root, '.ia', 'quality', 'onboard'), { recursive: true })
+    writeFileSync(join(root, '.ia', 'quality', 'onboard', 'measures.json'), measures)
   }
 
   writeFileSync(join(bin, 'constraint-lint'), `#!/usr/bin/env bash\nexec "${process.execPath}" "${LINT}" "$@"\n`)
@@ -66,7 +66,7 @@ test('Gate 2: constraints with no trace of measurement block — an unmeasured r
   })
 
   assert.equal(result.status, 1)
-  assert.match(result.stdout, /MISSING: \.claude\/quality\/onboard\/measures\.json/)
+  assert.match(result.stdout, /MISSING: \.ia\/quality\/onboard\/measures\.json/)
 })
 
 test('Gate 2: an empty measures file is a measurement that never happened, not a measurement with no candidate', () => {
@@ -144,7 +144,7 @@ test('Gate 2: a gate dropped at render time blocks — the STATIC verdict was es
 
 // --- `a-revoir`: the state that measurement produces and that the in-depth review must resolve.
 
-const CANDIDATES = '.claude/quality/onboard/candidates/entity.json'
+const CANDIDATES = '.ia/quality/onboard/candidates/entity.json'
 
 function candidatesDoc(rules) {
   return JSON.stringify({ scope: { slug: 'entity', prefix: 'ENT' }, rules }, null, 2)

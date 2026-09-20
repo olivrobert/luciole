@@ -1,12 +1,15 @@
 ---
 name: quality-constraints-verify
-description: Verify code quality constraints from .claude/quality/code/constraints. Accepts files, directories, or uses git diff by default.
-argument-hint: "[file1 file2 …] [dir/ …] [--ticket=<name>] [--reports=<dir>] (empty = git diff)"
-allowed-tools: Bash(node ${CLAUDE_PLUGIN_ROOT}/skills/quality-constraints-verify/scripts/match-constraints.js), Read, Agent, Write
+description: Verify code quality constraints from the configured quality root. Accepts files, directories, or uses git diff by default.
+argument-hint: "[file1 file2 …] [dir/ …] [--engine=agent|jev] [--ticket=<name>] [--reports=<dir>] (empty = git diff)"
+allowed-tools: Bash(node ${CLAUDE_PLUGIN_ROOT}/bin/quality-config *), Bash(node ${CLAUDE_PLUGIN_ROOT}/bin/constraint-check *), Bash(node ${CLAUDE_PLUGIN_ROOT}/skills/quality-constraints-verify/scripts/match-constraints.js), Read, Agent, Write
 model: opus
 ---
 
 # Constraints Checker (Orchestrator)
+
+Resolve `QUALITY_ROOT` from the environment, then `.luciole.env`, defaulting to
+`.ia/quality`.
 
 Read-only orchestrator. Static checks, constraint matching and agent grouping are pre-computed by a script — you dispatch semantic checks and build the report. DETECTS and REPORTS only, never fixes: corrections are the caller's job.
 
@@ -14,7 +17,22 @@ Read-only orchestrator. Static checks, constraint matching and agent grouping ar
 
 **Raw arguments received:** $ARGUMENTS
 
-Strip `--ticket=<name>` → `TICKET` (written into the report's measurement block, Phase 3: a ticket id, a branch name). Strip `--reports=<dir>` → `REPORTS_DIR` (Phase 3). Forward the remaining arguments to the script as-is.
+Strip `--engine=<name>` → `ENGINE_OVERRIDE`. It accepts only `agent` or `jev`; any other
+value is an error. Without an override, run
+`node ${CLAUDE_PLUGIN_ROOT}/bin/quality-config verify-engine` to resolve the process
+environment, `.luciole.env`, then the `agent` default.
+
+If the resolved engine is `jev`, run
+`node ${CLAUDE_PLUGIN_ROOT}/bin/constraint-check <all raw arguments except --engine>` and
+return its output unchanged. Exit `1` means constraints failed, not that the command was
+inoperative. Exit `2` means verification is incomplete or inoperative and MUST block the
+gate, even with zero reported violations. Do not run any phase below and do not dispatch an agent: `constraint-check`
+performs the same matching/static stages and ends with the same `json:verdict` contract.
+
+If the resolved engine is `agent`, continue below. Strip `--ticket=<name>` → `TICKET`
+(written into the report's measurement block, Phase 3: a ticket id, a branch name). Strip
+`--reports=<dir>` → `REPORTS_DIR` (Phase 3). Forward the remaining arguments to the matcher
+as-is.
 
 ## Phase 1: Run the matching script
 
@@ -57,9 +75,14 @@ Files to check:
 
 ## Phase 3: Report
 
-Merge static violations + agent results + inline results. Compute: N files, S static rules, M semantic rules, V MUST violations, W warnings (SHOULD + advisory findings). If an agent fails or returns no parseable result, mark its group as WARN.
+Merge static violations + agent results + inline results. Compute: N files, S static rules, M semantic rules, V MUST violations, W warnings (SHOULD + advisory findings), E verification errors. Static SHOULD findings are warnings too, never part of V.
 
-**Full report format** — `PASSED ✅` header when V=0, else `FAILED ❌`:
+If an agent fails, returns no parseable result, cannot read a complete file, or its COVERAGE
+omits an expected file/rule, mark its group as a verification error. The same applies to
+incomplete inline checks and matcher failures. These errors block the gate without
+inventing constraint violations. List the affected files/groups and reasons in the report.
+
+**Full report format** — `INCOMPLETE ❌` when E>0; otherwise `PASSED ✅` when V=0, else `FAILED ❌`:
 
 ````
 ## Constraints Check: FAILED ❌
@@ -69,6 +92,7 @@ Static rules checked: S (0 tokens)
 Semantic rules checked: M
 Violations found: V
 Warnings: W
+Verification errors: E
 
 ### Static Violations (grep)
 
@@ -97,19 +121,22 @@ Warnings: W
 **The measurement block is part of the report, on every run, passing or failing** — recording only failing runs would bias the sample. It is what lets `rule-stats` say "this rule found nothing for N runs", the only source that can: the prose lists violations, never the rules that stayed clean. Build it from `feedback[]`:
 
 - Copy every row **verbatim** — `rule` ids and `text` included, no paraphrase, no reordering, no row dropped. Static rows are complete already.
-- On each semantic row, set `verdict` to one of `pass` (checked, clean), `fail` (checked, violated — set `hits` to the number of files in violation), `n/a` (rule not applicable to these files), `false-positive` (the rule fired but the finding is unfounded — set `hits` and add `"reason":"…"`, one sentence). Never leave `verdict: null`: an unfilled verdict is a lost measurement, not a pass.
+- On each completely checked semantic row, set `verdict` to one of `pass` (checked, clean), `fail` (checked, violated — set `hits` to the number of files in violation), `n/a` (rule not applicable to these files), `false-positive` (the rule fired but the finding is unfounded — set `hits` and add `"reason":"…"`, one sentence).
+- If a rule's population was not completely checked because of a verification error, keep `verdict: null, hits: null` and add a `reason`. Do not substitute `pass` or `n/a`: `rule-stats lint` must flag the incomplete measurement and must not count it as a clean observation.
 - Degraded no-Agent mode included: you verified the rules inline, so you have the verdicts.
 - Keep the block on one line or pretty-printed, fenced exactly as shown (`json:constraints-run`, nothing else on the fence line). `rule-stats lint` rejects anything else.
 
 **Where it goes** — file OR terminal, never the full report twice.
 
-Resolve the report folder: 1) `REPORTS_DIR` if provided, 2) else `.claude/quality/code/reports/constraints` if `.claude/quality/code/` exists (the standard location, read by `quality-retrospective`).
+Resolve the report folder: 1) `REPORTS_DIR` if provided, 2) else
+`${QUALITY_ROOT}/code/reports/constraints` if `${QUALITY_ROOT}/code/` exists (the standard
+location, read by `quality-retrospective`).
 
 **If a folder resolved** — Write the full report, measurement block included, to `{reports folder}/{run_ts}-constraints.md` (folder auto-created), and print ONLY a compact summary (no block):
 
 ```
-## Constraints Check: FAILED ❌ (or PASSED ✅)
-Files: N | Static: S | Semantic: M | Violations: V | Warnings: W
+## Constraints Check: FAILED ❌ (or PASSED ✅, or INCOMPLETE ❌)
+Files: N | Static: S | Semantic: M | Violations: V | Warnings: W | Errors: E
 
 - file.php:42 HDL-002 (MUST): message          ← one line per violation, no sections
 - file.php HDL-003 (MUST): message             ← no `:line` when `line` is null (`present` rule)
@@ -126,4 +153,10 @@ End with a `json:verdict` block — MUST be the last thing you output (CI jobs a
 {"success": true, "violations": 0, "warnings": 0}
 ```
 
-`success`: true only if 0 MUST violations. `violations`: MUST count. `warnings`: SHOULD count.
+`success`: true only if 0 MUST violations AND verification is complete (E=0).
+`violations`: MUST count. `warnings`: SHOULD + advisory count. When E>0, add `errors: E`
+and return `success: false`, even if `violations: 0`. For example:
+
+```json:verdict
+{"success": false, "violations": 0, "warnings": 0, "errors": 1}
+```

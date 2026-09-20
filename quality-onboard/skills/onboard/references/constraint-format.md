@@ -1,7 +1,7 @@
 # Structure of a constraints file
 
 One markdown file per file type, in
-`.claude/quality/code/constraints/{slug}.md`.
+`${QUALITY_ROOT}/code/constraints/{slug}.md`.
 
 It's the deliverable, and it has **two readers**:
 

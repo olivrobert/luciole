@@ -6,8 +6,11 @@ allowed-tools: Read, Bash, Task
 
 # Onboard — in-depth review
 
+Resolve `QUALITY_ROOT` from the environment, then `.luciole.env`, defaulting to
+`.ia/quality`. Every path below is relative to that root.
+
 Argument: `$1` — the slug to review. Without an argument, processes all slugs present in
-`.claude/quality/onboard/candidates/`, **one at a time**, never in parallel.
+`${QUALITY_ROOT}/onboard/candidates/`, **one at a time**, never in parallel.
 
 This is the step that has the final word. A script has measured; no one has judged yet.
 
@@ -25,9 +28,9 @@ counters, not rules.
 ```
 Agent(subagent_type: "scope-reviewer", prompt:
   slug: entity
-  candidates: .claude/quality/onboard/candidates/entity.json
+  candidates: ${QUALITY_ROOT}/onboard/candidates/entity.json
   refDir: ${CLAUDE_PLUGIN_ROOT}/skills/onboard/references
-  findings: .claude/quality/onboard/findings/entity.json
+  findings: ${QUALITY_ROOT}/onboard/findings/entity.json
 )
 ```
 
@@ -39,8 +42,8 @@ Read-only. It checks the `retenu` (kept) rules against the criteria, and resolve
 ```
 Agent(subagent_type: "finding-applier", prompt:
   slug: entity
-  candidates: .claude/quality/onboard/candidates/entity.json
-  findings: .claude/quality/onboard/findings/entity.json
+  candidates: ${QUALITY_ROOT}/onboard/candidates/entity.json
+  findings: ${QUALITY_ROOT}/onboard/findings/entity.json
   refDir: ${CLAUDE_PLUGIN_ROOT}/skills/onboard/references
 )
 ```

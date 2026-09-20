@@ -10,7 +10,7 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 const SCRIPTS = join(HERE, '..', 'skills', 'onboard', 'scripts')
 const CONSTRAINTS_BIN = join(HERE, '..', '..', 'quality-constraints', 'bin')
 
-const CANDIDATES = '.claude/quality/onboard/candidates'
+const CANDIDATES = '.ia/quality/onboard/candidates'
 
 // A toy project: 2 files carry the trigger and comply with it, 2 don't carry it.
 // This is the case that, without `gate`, comes out at 2/4 and fails a rule that is actually true.
@@ -43,11 +43,11 @@ function project({ rules, files, scope } = {}) {
   return root
 }
 
-function run(root, script, args = []) {
+function run(root, script, args = [], env = {}) {
   return spawnSync(process.execPath, [join(SCRIPTS, script), ...args], {
     cwd: root,
     encoding: 'utf8',
-    env: { ...process.env, PATH: `${CONSTRAINTS_BIN}:${process.env.PATH}` },
+    env: { ...process.env, QUALITY_ROOT: '', PATH: `${CONSTRAINTS_BIN}:${process.env.PATH}`, ...env },
   })
 }
 
@@ -266,17 +266,17 @@ test('render-constraints refuses to render while an a-revoir survives, and write
   const r = run(root, 'render-constraints.mjs')
   assert.equal(r.status, 1)
   assert.match(r.stdout, /nothing was written/)
-  assert.equal(existsSync(join(root, '.claude/quality/code/constraints/entity.md')), false)
+  assert.equal(existsSync(join(root, '.ia/quality/code/constraints/entity.md')), false)
 })
 
 test('render-constraints removes the stale {slug}.md once the last rule of a scope is discarded, and leaves hand-written files alone', () => {
   const root = project({ rules: [GATED] })
   run(root, 'measure.mjs', ['--min-population', '2'])
   assert.equal(run(root, 'render-constraints.mjs').status, 0)
-  const rendered = join(root, '.claude/quality/code/constraints/entity.md')
+  const rendered = join(root, '.ia/quality/code/constraints/entity.md')
   assert.ok(existsSync(rendered))
 
-  const manualDir = join(root, '.claude/quality/code/constraints/conventions')
+  const manualDir = join(root, '.ia/quality/code/constraints/conventions')
   mkdirSync(manualDir, { recursive: true })
   writeFileSync(join(manualDir, 'entity.md'), '---\npaths:\n  - "src/**/*.php"\n---\n\n## Semantic Rules\n- MUST: hand-written rule\n')
 
@@ -299,15 +299,38 @@ test('render-constraints produces a file that constraint-lint --strict accepts',
   run(root, 'measure.mjs', ['--min-population', '2'])
   assert.equal(run(root, 'render-constraints.mjs').status, 0)
 
-  const md = readFileSync(join(root, '.claude/quality/code/constraints/entity.md'), 'utf8')
+  const md = readFileSync(join(root, '.ia/quality/code/constraints/entity.md'), 'utf8')
   assert.match(md, /# Constraints — Doctrine Entities/)
   assert.match(md, /ENT-001 \| present \| JoinTable/)
 
   const bin = join(root, 'lint.sh')
   writeFileSync(bin, `#!/usr/bin/env bash\nexec "${process.execPath}" "${join(CONSTRAINTS_BIN, 'constraint-lint')}" "$@"\n`)
   chmodSync(bin, 0o755)
-  const lint = spawnSync(bin, ['.claude/quality/code/constraints', '--strict'], { cwd: root, encoding: 'utf8' })
+  const lint = spawnSync(bin, ['.ia/quality/code/constraints', '--strict'], { cwd: root, encoding: 'utf8' })
   assert.equal(lint.status, 0, lint.stdout + lint.stderr)
+})
+
+test('QUALITY_ROOT relocates the complete onboarding state outside the harness directory', () => {
+  const root = project({ rules: [GATED] })
+  const configured = run(root, 'configure-root.mjs', ['.quality-artifacts', 'jev'])
+  assert.equal(configured.status, 0, configured.stdout + configured.stderr)
+  assert.equal(
+    readFileSync(join(root, '.luciole.env'), 'utf8'),
+    'QUALITY_ROOT=".quality-artifacts"\nQUALITY_VERIFY_ENGINE="jev"\n',
+  )
+  const customCandidates = join(root, '.quality-artifacts/onboard/candidates')
+  mkdirSync(customCandidates, { recursive: true })
+  writeFileSync(
+    join(customCandidates, 'entity.json'),
+    readFileSync(join(root, CANDIDATES, 'entity.json')),
+  )
+  assert.equal(run(root, 'measure.mjs', ['--min-population', '2']).status, 0)
+
+  const r = run(root, 'render-constraints.mjs')
+  assert.equal(r.status, 0, r.stdout + r.stderr)
+  assert.ok(existsSync(join(root, '.quality-artifacts/code/constraints/entity.md')))
+  assert.ok(existsSync(join(root, '.quality-artifacts/onboard/measures.json')))
+  assert.equal(existsSync(join(root, '.ia/quality/code/constraints/entity.md')), false)
 })
 
 // --------------------------------------------------------------- human review
@@ -336,7 +359,7 @@ test('render-review announces the files to read without copying the rules back',
   assert.match(result.stdout, /# Final human review/)
   assert.match(result.stdout, /2 rule\(s\) kept/)
   assert.match(result.stdout, /1 static, 1 semantic/)
-  assert.match(result.stdout, /\.claude\/quality\/code\/constraints\/entity\.md/)
+  assert.match(result.stdout, /\.ia\/quality\/code\/constraints\/entity\.md/)
   assert.match(result.stdout, /Read these constraints files before validating/)
   assert.doesNotMatch(result.stdout, /ENT-001/)
   assert.doesNotMatch(result.stdout, /ENT-002/)
@@ -356,7 +379,7 @@ test('approval ties validation to the exact content of the constraints', () => {
   assert.equal(approved.status, 0, approved.stdout + approved.stderr)
   assert.equal(run(root, 'approval.mjs', ['check']).status, 0)
 
-  const constraint = join(root, '.claude/quality/code/constraints/entity.md')
+  const constraint = join(root, '.ia/quality/code/constraints/entity.md')
   writeFileSync(constraint, readFileSync(constraint, 'utf8') + '\n<!-- changed -->\n')
   const stale = run(root, 'approval.mjs', ['check'])
   assert.equal(stale.status, 1)
@@ -378,15 +401,15 @@ test('render-backlog projects automatable rules and preserves lines already mark
     ],
   })
   assert.equal(run(root, 'render-backlog.mjs').status, 0)
-  let md = readFileSync(join(root, '.claude/quality/code/lint-backlog.md'), 'utf8')
+  let md = readFileSync(join(root, '.ia/quality/code/lint-backlog.md'), 'utf8')
   assert.match(md, /\| entity \| An entity is declared final \| cs-fixer \| rewrites \| to do \|/)
   assert.match(md, /phpstan \(custom rule\) \| rejects \| to do \|/)
 
   // The `done` mark set by hand on a `rewrites` line can't come from any JSON field:
   // a regeneration that flipped it back to `to do` would reopen a ticket already handled.
-  writeFileSync(join(root, '.claude/quality/code/lint-backlog.md'), md.replace('| rewrites | to do |', '| rewrites | done |'))
+  writeFileSync(join(root, '.ia/quality/code/lint-backlog.md'), md.replace('| rewrites | to do |', '| rewrites | done |'))
   run(root, 'render-backlog.mjs')
-  md = readFileSync(join(root, '.claude/quality/code/lint-backlog.md'), 'utf8')
+  md = readFileSync(join(root, '.ia/quality/code/lint-backlog.md'), 'utf8')
   assert.match(md, /An entity is declared final \| cs-fixer \| rewrites \| done \|/)
 })
 
@@ -395,7 +418,7 @@ test('render-backlog produces no file when no rule is toolable', () => {
   const r = run(root, 'render-backlog.mjs')
   assert.equal(r.status, 0)
   assert.match(r.stdout, /no toolable rule/)
-  assert.equal(existsSync(join(root, '.claude/quality/code/lint-backlog.md')), false)
+  assert.equal(existsSync(join(root, '.ia/quality/code/lint-backlog.md')), false)
 })
 
 test('render-backlog ignores a rule already covered and discarded as tooling', () => {
@@ -410,7 +433,7 @@ test('render-backlog ignores a rule already covered and discarded as tooling', (
   })
   const r = run(root, 'render-backlog.mjs')
   assert.equal(r.status, 0)
-  assert.equal(existsSync(join(root, '.claude/quality/code/lint-backlog.md')), false)
+  assert.equal(existsSync(join(root, '.ia/quality/code/lint-backlog.md')), false)
 })
 
 // ── sample: what the generator reads, distinct from the population ────────────────────────
@@ -457,8 +480,8 @@ const FIVE = {
 
 function scopesProject(scopes) {
   const root = project({ rules: [GATED], files: FIVE })
-  mkdirSync(join(root, '.claude/quality/code'), { recursive: true })
-  writeFileSync(join(root, '.claude/quality/onboard/scopes.json'), JSON.stringify({ scopes }, null, 2))
+  mkdirSync(join(root, '.ia/quality/code'), { recursive: true })
+  writeFileSync(join(root, '.ia/quality/onboard/scopes.json'), JSON.stringify({ scopes }, null, 2))
   return root
 }
 
@@ -616,7 +639,7 @@ test('measure --slug merges its report with the existing one', () => {
   const root = twoScopes()
   run(root, 'measure.mjs', ['--min-population', '2'])
   run(root, 'measure.mjs', ['--min-population', '2', '--slug', 'entity'])
-  const report = JSON.parse(readFileSync(join(root, '.claude/quality/onboard/measures.json'), 'utf8'))
+  const report = JSON.parse(readFileSync(join(root, '.ia/quality/onboard/measures.json'), 'utf8'))
   const ids = report.results.map((r) => r.id).sort()
   assert.deepEqual(ids, ['CMD-001', 'ENT-001'])
 })
@@ -631,8 +654,8 @@ test('measure --slug on an unknown scope fails instead of measuring everything',
 // scopes.json the previous behavior is kept — a single floor, the default one.
 test('measure reads the minPopulation of each scope from scopes.json', () => {
   const root = twoScopes()
-  mkdirSync(join(root, '.claude/quality/code'), { recursive: true })
-  writeFileSync(join(root, '.claude/quality/onboard/scopes.json'), JSON.stringify({
+  mkdirSync(join(root, '.ia/quality/code'), { recursive: true })
+  writeFileSync(join(root, '.ia/quality/onboard/scopes.json'), JSON.stringify({
     scopes: [{ slug: 'entity', minPopulation: 2 }, { slug: 'command', minPopulation: 4 }],
   }, null, 2))
 
@@ -687,8 +710,8 @@ test('validate refuses an automatable with no nature, and a nature inconsistent 
 // token left in the rendered output, an incomplete mapping.
 test('verify-skills checks skills and mapping against scopes.json', () => {
   const root = mkdtempSync(join(tmpdir(), 'verify-skills-'))
-  mkdirSync(join(root, '.claude/quality/onboard'), { recursive: true })
-  writeFileSync(join(root, '.claude/quality/onboard/scopes.json'), JSON.stringify({
+  mkdirSync(join(root, '.ia/quality/onboard'), { recursive: true })
+  writeFileSync(join(root, '.ia/quality/onboard/scopes.json'), JSON.stringify({
     scopes: [{ slug: 'entity', prefix: 'ENT', glob: 'src/Domain/*.php', model: 'src/Domain/A1.php' }],
   }))
 
@@ -701,7 +724,7 @@ test('verify-skills checks skills and mapping against scopes.json', () => {
   // Fully rendered but unfinished: a template token has survived.
   mkdirSync(join(root, '.claude/skills/quality-entity'), { recursive: true })
   writeFileSync(join(root, '.claude/skills/quality-entity/SKILL.md'),
-    '# Create entity\n\n1. Read `.claude/quality/code/constraints/entity.md`\n2. Read `{MODEL}`\n')
+    '# Create entity\n\n1. Read `.ia/quality/code/constraints/entity.md`\n2. Read `{MODEL}`\n')
   writeFileSync(join(root, '.claude/skills/skill-mapping.md'), '| entity | src/Domain/*.php | quality-entity |\n')
   r = run(root, 'verify-skills.mjs', ['--project', root])
   assert.equal(r.status, 1)
@@ -710,16 +733,43 @@ test('verify-skills checks skills and mapping against scopes.json', () => {
   // Rendered without the model line: the constraints state the rule, but nothing shows
   // the form — what the skill then leaves to invention doesn't show on a re-read.
   writeFileSync(join(root, '.claude/skills/quality-entity/SKILL.md'),
-    '# Create entity\n\n1. Read `.claude/quality/code/constraints/entity.md`\n')
+    '# Create entity\n\n1. Read `.ia/quality/code/constraints/entity.md`\n')
   r = run(root, 'verify-skills.mjs', ['--project', root])
   assert.equal(r.status, 1)
   assert.match(r.stdout, /does not route to the model src\/Domain\/A1\.php/)
 
   // Clean render: everything passes.
   writeFileSync(join(root, '.claude/skills/quality-entity/SKILL.md'),
-    '# Create entity\n\n1. Read `.claude/quality/code/constraints/entity.md`\n2. Read `src/Domain/A1.php`\n')
+    '# Create entity\n\n1. Read `.ia/quality/code/constraints/entity.md`\n2. Read `src/Domain/A1.php`\n')
   r = run(root, 'verify-skills.mjs', ['--project', root])
   assert.equal(r.status, 0, r.stdout)
+})
+
+// A skill folder is allowed to carry its own supporting files — a bundled form model
+// when the project has no compliant file to point at, a script, an asset. What the gate
+// refuses is the orphan: something sitting in the folder that the skill never mentions.
+test('verify-skills accepts a bundled file the skill routes to, refuses an orphan', () => {
+  const root = mkdtempSync(join(tmpdir(), 'verify-skills-bundled-'))
+  const skillDir = join(root, '.claude/skills/quality-entity')
+  mkdirSync(join(skillDir, 'template'), { recursive: true })
+  mkdirSync(join(root, '.ia/quality/onboard'), { recursive: true })
+  writeFileSync(join(root, '.ia/quality/onboard/scopes.json'), JSON.stringify({
+    scopes: [{ slug: 'entity', prefix: 'ENT', glob: 'src/Domain/*.php', model: '.claude/skills/quality-entity/template/A1.php' }],
+  }))
+  writeFileSync(join(skillDir, 'template/A1.php'), '<?php\n')
+  writeFileSync(join(root, '.claude/skills/skill-mapping.md'), '| entity | src/Domain/*.php | quality-entity |\n')
+  writeFileSync(join(skillDir, 'SKILL.md'),
+    '# Create entity\n\n1. Read `.ia/quality/code/constraints/entity.md`\n2. Read `.claude/skills/quality-entity/template/A1.php`\n')
+
+  // The bundled model is routed to by the skill: it passes.
+  let r = run(root, 'verify-skills.mjs', ['--project', root])
+  assert.equal(r.status, 0, r.stdout)
+
+  // A leftover nothing points to: refused.
+  writeFileSync(join(skillDir, 'reference.md'), 'notes\n')
+  r = run(root, 'verify-skills.mjs', ['--project', root])
+  assert.equal(r.status, 1)
+  assert.match(r.stdout, /nothing in SKILL\.md points to: reference\.md/)
 })
 
 // A scope with no `model` in scopes.json cannot produce any compliant skill: the
@@ -727,12 +777,12 @@ test('verify-skills checks skills and mapping against scopes.json', () => {
 test('verify-skills refuses a scope with no model', () => {
   const root = mkdtempSync(join(tmpdir(), 'verify-skills-nomodel-'))
   mkdirSync(join(root, '.claude/skills/quality-entity'), { recursive: true })
-  mkdirSync(join(root, '.claude/quality/onboard'), { recursive: true })
-  writeFileSync(join(root, '.claude/quality/onboard/scopes.json'), JSON.stringify({
+  mkdirSync(join(root, '.ia/quality/onboard'), { recursive: true })
+  writeFileSync(join(root, '.ia/quality/onboard/scopes.json'), JSON.stringify({
     scopes: [{ slug: 'entity', prefix: 'ENT', glob: 'src/Domain/*.php' }],
   }))
   writeFileSync(join(root, '.claude/skills/quality-entity/SKILL.md'),
-    '# Create entity\n\n1. Read `.claude/quality/code/constraints/entity.md`\n')
+    '# Create entity\n\n1. Read `.ia/quality/code/constraints/entity.md`\n')
   writeFileSync(join(root, '.claude/skills/skill-mapping.md'), '| entity | src/Domain/*.php | quality-entity |\n')
   const r = run(root, 'verify-skills.mjs', ['--project', root])
   assert.equal(r.status, 1)
