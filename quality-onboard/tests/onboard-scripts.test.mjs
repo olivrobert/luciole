@@ -6,6 +6,8 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { qualityRoot } from '../skills/onboard/scripts/lib/project-paths.mjs'
+
 const HERE = dirname(fileURLToPath(import.meta.url))
 const SCRIPTS = join(HERE, '..', 'skills', 'onboard', 'scripts')
 const CONSTRAINTS_BIN = join(HERE, '..', '..', 'quality-constraints', 'bin')
@@ -787,4 +789,16 @@ test('verify-skills refuses a scope with no model', () => {
   const r = run(root, 'verify-skills.mjs', ['--project', root])
   assert.equal(r.status, 1)
   assert.match(r.stdout, /has no `model` in scopes\.json/)
+})
+
+test('.luciole.local.env overrides the QUALITY_ROOT of .luciole.env', () => {
+  const root = mkdtempSync(join(tmpdir(), 'onboard-root-'))
+  writeFileSync(join(root, '.luciole.env'), 'QUALITY_ROOT="shared"\n')
+  const nested = join(root, 'src')
+  mkdirSync(nested)
+
+  assert.equal(qualityRoot({}, nested), join(root, 'shared'))
+  writeFileSync(join(root, '.luciole.local.env'), 'QUALITY_ROOT="mine"\n')
+  assert.equal(qualityRoot({}, nested), join(root, 'mine'))
+  assert.equal(qualityRoot({ QUALITY_ROOT: 'from-environment' }, nested), 'from-environment')
 })

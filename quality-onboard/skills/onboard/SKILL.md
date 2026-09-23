@@ -7,8 +7,9 @@ disable-model-invocation: true
 # Onboard
 
 `QUALITY_ROOT` is the harness-independent state root. `/quality-onboard:scope` asks for it
-once and stores it in the project-root `.luciole.env`; a process environment variable can
-override it, and `.ia/quality` remains the fallback. Both `code/` deliverables and
+once and stores it in the project-root `.luciole.env`; an uncommitted `.luciole.local.env`
+beside it, then a process environment variable, can override it, and `.ia/quality` remains
+the fallback. Both `code/` deliverables and
 `onboard/` intermediate state live below it.
 
 Generates the constraint files (`constraints/{slug}.md`) that `quality-constraints` **enforces** during review and that scaffolding skills follow when creating classes. A deviation from `SPEC.md` produces a silently inert rule, hence the deterministic steps that frame the agents: measurement and the gate.

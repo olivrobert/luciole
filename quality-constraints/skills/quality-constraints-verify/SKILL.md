@@ -8,8 +8,8 @@ model: opus
 
 # Constraints Checker (Orchestrator)
 
-Resolve `QUALITY_ROOT` from the environment, then `.luciole.env`, defaulting to
-`.ia/quality`.
+Resolve `QUALITY_ROOT` from the environment, then `.luciole.local.env`,
+then `.luciole.env`, defaulting to `.ia/quality`.
 
 Read-only orchestrator. Static checks, constraint matching and agent grouping are pre-computed by a script — you dispatch semantic checks and build the report. DETECTS and REPORTS only, never fixes: corrections are the caller's job.
 
@@ -20,7 +20,7 @@ Read-only orchestrator. Static checks, constraint matching and agent grouping ar
 Strip `--engine=<name>` → `ENGINE_OVERRIDE`. It accepts only `agent` or `jev`; any other
 value is an error. Without an override, run
 `node ${CLAUDE_PLUGIN_ROOT}/bin/quality-config verify-engine` to resolve the process
-environment, `.luciole.env`, then the `agent` default.
+environment, `.luciole.local.env`, `.luciole.env`, then the `agent` default.
 
 If the resolved engine is `jev`, run
 `node ${CLAUDE_PLUGIN_ROOT}/bin/constraint-check <all raw arguments except --engine>` and

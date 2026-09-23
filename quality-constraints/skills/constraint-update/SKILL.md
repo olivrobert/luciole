@@ -6,8 +6,8 @@ allowed-tools: Read, Glob, Edit, Write, Bash(git diff --name-only), Bash(node ${
 
 # Constraint Update
 
-Resolve `QUALITY_ROOT` from the environment, then `.luciole.env`, defaulting to
-`.ia/quality`.
+Resolve `QUALITY_ROOT` from the environment, then `.luciole.local.env`,
+then `.luciole.env`, defaulting to `.ia/quality`.
 
 Two modes:
 - **From conversation** (no argument): `git diff --name-only`, read the changed files, identify the new pattern or convention.

@@ -28,6 +28,33 @@ test('QUALITY_ROOT resolution prefers the process environment over .luciole.env'
   assert.equal(projectPaths.verifyEngine({ QUALITY_VERIFY_ENGINE: 'agent' }, root), 'agent')
 })
 
+test('.luciole.local.env overrides .luciole.env key by key', () => {
+  const root = mkdtempSync(join(tmpdir(), 'quality-root-'))
+  writeFileSync(join(root, '.luciole.env'), 'QUALITY_ROOT="shared"\nQUALITY_VERIFY_ENGINE="agent"\n')
+  writeFileSync(join(root, '.luciole.local.env'), 'QUALITY_VERIFY_ENGINE="jev"\n')
+  const nested = join(root, 'src', 'Domain')
+  mkdirSync(nested, { recursive: true })
+
+  assert.equal(projectPaths.qualityRoot({}, nested), join(root, 'shared'))
+  assert.equal(projectPaths.verifyEngine({}, nested), 'jev')
+  assert.equal(projectPaths.verifyEngine({ QUALITY_VERIFY_ENGINE: 'agent' }, nested), 'agent')
+
+  writeFileSync(join(root, '.luciole.local.env'), 'QUALITY_ROOT="mine"\n')
+  assert.equal(projectPaths.qualityRoot({}, nested), join(root, 'mine'))
+  assert.equal(projectPaths.verifyEngine({}, nested), 'agent')
+})
+
+test('a lone .luciole.local.env is enough, and falls back to defaults for missing keys', () => {
+  const root = mkdtempSync(join(tmpdir(), 'quality-root-'))
+  writeFileSync(join(root, '.luciole.local.env'), 'QUALITY_VERIFY_ENGINE="jev"\n')
+
+  assert.equal(projectPaths.qualityRoot({}, root), projectPaths.DEFAULT_QUALITY_ROOT)
+  assert.equal(projectPaths.verifyEngine({}, root), 'jev')
+
+  writeFileSync(join(root, '.luciole.env'), 'QUALITY_VERIFY_ENGINE="jev"\n')
+  assert.throws(() => projectPaths.qualityRoot({}, root), /\.luciole\.env: QUALITY_ROOT must be a non-empty value/)
+})
+
 test('JEV output uses the same verdict block as agent verification', () => {
   const block = renderVerdict({ counts: { violations: 2, warnings: 1 } })
   assert.equal(block, '```json:verdict\n{"success":false,"violations":2,"warnings":1}\n```\n')

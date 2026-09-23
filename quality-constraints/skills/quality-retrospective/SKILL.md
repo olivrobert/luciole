@@ -9,8 +9,8 @@ effort: high
 
 # Quality Retrospective
 
-Resolve `QUALITY_ROOT` from the environment, then `.luciole.env`, defaulting to
-`.ia/quality`.
+Resolve `QUALITY_ROOT` from the environment, then `.luciole.local.env`,
+then `.luciole.env`, defaulting to `.ia/quality`.
 
 NON-BLOCKING analysis. Consumes material already collected at zero cost (the constraint reports written by `quality-constraints-verify`, and the measurement blocks they carry) and derives proposals to improve the `${QUALITY_ROOT}/code/constraints/` files. PROPOSES only: never edits a constraint file, never fixes code, never commits. Appending to `tool-candidates.md` (Phase 2) is not an exception — that file changes what no checker enforces.
 

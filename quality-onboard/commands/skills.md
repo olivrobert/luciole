@@ -5,8 +5,8 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 
 # Onboard — skills
 
-Resolve `QUALITY_ROOT` from the environment, then `.luciole.env`, defaulting to
-`.ia/quality`. Every path below is relative to that root.
+Resolve `QUALITY_ROOT` from the environment, then `.luciole.local.env`,
+then `.luciole.env`, defaulting to `.ia/quality`. Every path below is relative to that root.
 
 Last command in the pipeline. It makes each scope **addressable**: a technical
 plan maps every file to create onto a skill, so each `scope` in `scopes.json`

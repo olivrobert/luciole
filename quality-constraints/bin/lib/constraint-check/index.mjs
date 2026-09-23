@@ -45,8 +45,8 @@ Options
   -h, --help                This help.
 
 Environment
-  QUALITY_ROOT              Quality artifacts root. Overrides project-root .luciole.env;
-                            default: .ia/quality.
+  QUALITY_ROOT              Quality artifacts root. Overrides project-root
+                            .luciole.local.env then .luciole.env; default: .ia/quality.
   TYPESAFE_API_KEY          Required for semantic checks, except with --dry-run.
                             Falls back to TYPESAFE_API_KEY in <project-root>/.env.local.
 

@@ -1,6 +1,6 @@
 {
   "name": "quality-onboard",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Onboarding layer: analyzes an existing codebase, measures its conventions, writes the constraint files and generates the project's own scaffolding skills. Nothing generic ships with it: every rule, model and tool reference is derived from the project.",
   "author": {
     "name": "Olivier Robert"

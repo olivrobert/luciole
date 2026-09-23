@@ -36,7 +36,8 @@ accepts less breaks valid files.
 ## 1. Location and grouping
 
 - Single root: `${QUALITY_ROOT}/code/constraints/`. Resolution order for `QUALITY_ROOT`:
-  process environment, project-root `.luciole.env`, then `.ia/quality`.
+  process environment, project-root `.luciole.local.env`, then `.luciole.env`, then
+  `.ia/quality`. The local file overrides the shared one key by key and is not committed.
 - All `*.md` files, **at any depth** (`find -type f -name '*.md'`).
 - **The extensionless `basename` is the constraint KEY**, not the path. Two files with
   the same basename in different folders (`conventions/handler.md` +
@@ -454,8 +455,8 @@ Hook points:
 ## 8. Verification gate
 
 `quality-constraints-verify` selects its semantic engine in this order: explicit
-`--engine=agent|jev`, process `QUALITY_VERIFY_ENGINE`, project `.luciole.env`, then
-`agent`. The standalone `constraint-check` CLI always uses Jev. Both engines use the
+`--engine=agent|jev`, process `QUALITY_VERIFY_ENGINE`, project `.luciole.local.env`, then
+`.luciole.env`, then `agent`. The standalone `constraint-check` CLI always uses Jev. Both engines use the
 same local matcher for static rules and scope selection.
 
 The final `json:verdict` block carries `success`, `violations` (MUST findings), and

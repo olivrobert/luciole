@@ -5,8 +5,8 @@ allowed-tools: Read, Bash
 
 # Onboard — rendering, gate, and human validation
 
-Resolve `QUALITY_ROOT` from the environment, then `.luciole.env`, defaulting to
-`.ia/quality`. Every path below is relative to that root.
+Resolve `QUALITY_ROOT` from the environment, then `.luciole.local.env`,
+then `.luciole.env`, defaulting to `.ia/quality`. Every path below is relative to that root.
 
 The first three steps are deterministic. The last one doesn't re-judge the
 candidates one by one: it asks the human whether they accept the complete

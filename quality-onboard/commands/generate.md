@@ -5,8 +5,8 @@ allowed-tools: Read, Bash, Task
 
 # Onboard — generation and measurement
 
-Resolve `QUALITY_ROOT` from the environment, then `.luciole.env`, defaulting to
-`.ia/quality`. Every path below is relative to that root.
+Resolve `QUALITY_ROOT` from the environment, then `.luciole.local.env`,
+then `.luciole.env`, defaulting to `.ia/quality`. Every path below is relative to that root.
 
 Prerequisite: `${QUALITY_ROOT}/onboard/scopes.json`, written by `/quality-onboard:scope`.
 If it is missing, stop and point back to that command.

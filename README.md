@@ -1,4 +1,4 @@
-# luciole
+<h1 align="center">Luciole</h1>
 
 Derive constraint files from an existing codebase and check changes against them.
 
@@ -23,8 +23,8 @@ the project's existing linters and analysers.
   regex probes across each scope's full file list; review examines the evidence and exceptions.
   A probe's match ratio is evidence about a pattern, not proof of the full semantic rule.
 - **Verification:** static rules use line-by-line regex checks without LLM evaluation.
-  Semantic requirements are assessed by agents or Jev. The standalone Jev CLI also handles
-  orchestration and reporting without an agent.
+  Semantic requirements are assessed by one of two [engines](#verification-engines):
+  harness agents, or Jev.
 - **Retrospective:** recorded results help identify unused scopes and rules worth revisiting
   or moving into existing tooling. Rule changes require a separate update and approval.
 
@@ -34,13 +34,12 @@ operate on text, and semantic checks use the selected engine's judgment. The exa
 Symfony because that is where the kit was developed.
 
 Paths below use `QUALITY_ROOT`, a harness-independent artifact root. Onboarding asks for
-it once and writes the choice to the project-root `.luciole.env`; the process environment
-can override it, and `.ia/quality` is the fallback. It relocates the `code/`
-deliverables and `onboard/` state together.
+it once and writes the choice to the project-root `.luciole.env`, meant to be committed.
+An uncommitted `.luciole.local.env` beside it overrides that file key by key for one
+developer; the process environment overrides both, and `.ia/quality` is the fallback.
+It relocates the `code/` deliverables and `onboard/` state together.
 
-The same file records `QUALITY_VERIFY_ENGINE="agent"` or `"jev"`. The verify command uses
-that default, while `--engine=agent|jev` selects a different engine for one run. Static
-rules always stay local; only semantic evaluation changes engine.
+`.luciole.env` also records the default [verification engine](#verification-engines).
 
 ## What a constraint looks like
 
@@ -71,6 +70,24 @@ the selected engine; SHOULD findings never block. Constraints containing only se
 SHOULD rules stay advisory and are not sent to either engine. A `via=` annotation declares that your
 own tooling handles the rule, so the checker skips it. [`SPEC.md`](quality-constraints/SPEC.md)
 defines the format, and `constraint-lint` checks constraint files for format errors.
+
+## Verification engines
+
+Static rules always run locally, in the matcher. Only the semantic rules change engine:
+
+| | `agent` (default) | `jev` |
+|---|---|---|
+| Who judges | Claude Code: the verify skill inlines small groups and dispatches `quality-constraints-checker` agents for the rest | Jev, through the TypeSafe API — one request per file, one question per rule |
+| Entry point | `/quality-constraints:quality-constraints-verify` | the same skill with `--engine=jev`, or the standalone `constraint-check` CLI |
+| Needs | a Claude Code session | `TYPESAFE_API_KEY`; no agent, usable in CI from a plain shell |
+| Sends out | files to the Claude session | semantic rules and file contents to TypeSafe |
+| Limits | agent context | files over `--max-chars` (60,000) are not sent: the check is incomplete |
+
+Selection order for the verify skill: `--engine=agent|jev` for one run, then the process
+`QUALITY_VERIFY_ENGINE`, then `QUALITY_VERIFY_ENGINE` in `.luciole.local.env`, then in
+`.luciole.env`, then `agent`. `constraint-check` ignores this setting and always uses Jev.
+Both engines produce the same report, the same `json:constraints-run` block and the same
+`json:verdict` contract.
 
 ## Quick start
 
@@ -121,9 +138,6 @@ constraint-check                          # current git diff
 constraint-check src/Invoice              # a file or directory
 constraint-check --dry-run --stdout        # inspect requests without calling the API
 ```
-
-`constraint-check` always uses Jev. Engine selection through `--engine` or
-`QUALITY_VERIFY_ENGINE` belongs to `/quality-constraints:quality-constraints-verify`.
 
 Static rules still use the same local matcher. Semantic rules and the relevant file
 contents are sent to TypeSafe System One and require `TYPESAFE_API_KEY`. Export it in the

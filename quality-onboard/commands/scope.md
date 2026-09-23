@@ -5,8 +5,8 @@ allowed-tools: Read, Grep, Glob, Bash, Write
 
 # Onboard — scopes
 
-Resolve `QUALITY_ROOT` from the environment, then `.luciole.env`, defaulting to
-`.ia/quality`. Every path below is relative to that root.
+Resolve `QUALITY_ROOT` from the environment, then `.luciole.local.env`,
+then `.luciole.env`, defaulting to `.ia/quality`. Every path below is relative to that root.
 
 First command in the pipeline. It decides **once** what the following ones will
 never rediscover.
@@ -25,7 +25,9 @@ node ${CLAUDE_PLUGIN_ROOT}/skills/onboard/scripts/configure-root.mjs '<chosen pa
 The resulting file contains `QUALITY_ROOT="…"` and `QUALITY_VERIFY_ENGINE="…"`; it carries
 no secret and should be committed so every harness and contributor resolves the same
 configuration. If the file already exists, do not ask again. Explicit process environment
-variables remain temporary overrides and do not rewrite the file.
+variables remain temporary overrides and do not rewrite the file. A developer who needs a
+different value keeps it in an uncommitted `.luciole.local.env` beside it, which overrides
+`.luciole.env` key by key; this step never writes that file.
 
 ## 1. Survey the types
 
