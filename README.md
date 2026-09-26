@@ -19,27 +19,15 @@ include handlers returning the modified entity or controllers using `RoutePrefix
 constants. luciole provides a way to record and check such conventions alongside
 the project's existing linters and analysers.
 
-- **Onboarding:** agents propose rules from a sample of files. Scripts run the available
-  regex probes across each scope's full file list; review examines the evidence and exceptions.
-  A probe's match ratio is evidence about a pattern, not proof of the full semantic rule.
-- **Verification:** static rules use line-by-line regex checks without LLM evaluation.
-  Semantic requirements are assessed by one of two [engines](#verification-engines):
-  harness agents, or Jev.
-- **Retrospective:** recorded results help identify unused scopes and rules worth revisiting
-  or moving into existing tooling. Rule changes require a separate update and approval.
+- **Onboarding:** agents propose rules from a sample of files, scripts measure their regex
+  probes across each scope's full file list, a review keeps or drops each rule.
+- **Verification:** static rules run as regex, without an LLM. Semantic rules are assessed
+  by one of two [engines](#verification-engines): Claude Code agents, or Jev.
+- **Retrospective:** past reports point to dead scopes and rules worth revisiting or moving
+  into existing tooling.
 
-The matcher derives the file types in scope from the constraints, and onboarding derives
-its scopes from the repository. The engine has no fixed language list; its static checks
-operate on text, and semantic checks use the selected engine's judgment. The examples below use
-Symfony because that is where the kit was developed.
-
-Paths below use `QUALITY_ROOT`, a harness-independent artifact root. Onboarding asks for
-it once and writes the choice to the project-root `.luciole.env`, meant to be committed.
-An uncommitted `.luciole.local.env` beside it overrides that file key by key for one
-developer; the process environment overrides both, and `.ia/quality` is the fallback.
-It relocates the `code/` deliverables and `onboard/` state together.
-
-`.luciole.env` also records the default [verification engine](#verification-engines).
+Nothing is tied to a language: scopes come from the repository, static checks operate on
+text. The examples use Symfony because that is where the kit was developed.
 
 ## What a constraint looks like
 
@@ -65,11 +53,10 @@ CTL-004 | present | RoutePrefix::   | MUST use RoutePrefix constants | via=phpst
 - SHOULD: Return the entity (created or modified)
 ````
 
-Static rules run as a regex, line by line, in a script. Semantic rules are assessed by
-the selected engine; SHOULD findings never block. Constraints containing only semantic
-SHOULD rules stay advisory and are not sent to either engine. A `via=` annotation declares that your
-own tooling handles the rule, so the checker skips it. [`SPEC.md`](quality-constraints/SPEC.md)
-defines the format, and `constraint-lint` checks constraint files for format errors.
+Static rules run as a regex, line by line. Semantic rules are assessed by the selected
+engine; SHOULD findings never block. A `via=` annotation declares that your own tooling
+handles the rule, so the checker skips it. [`SPEC.md`](quality-constraints/SPEC.md) defines
+the format; `constraint-lint` checks it.
 
 ## Verification engines
 
@@ -83,11 +70,9 @@ Static rules always run locally, in the matcher. Only the semantic rules change 
 | Sends out | files to the Claude session | semantic rules and file contents to TypeSafe |
 | Limits | agent context | files over `--max-chars` (60,000) are not sent: the check is incomplete |
 
-Selection order for the verify skill: `--engine=agent|jev` for one run, then the process
-`QUALITY_VERIFY_ENGINE`, then `QUALITY_VERIFY_ENGINE` in `.luciole.local.env`, then in
-`.luciole.env`, then `agent`. `constraint-check` ignores this setting and always uses Jev.
-Both engines produce the same report, the same `json:constraints-run` block and the same
-`json:verdict` contract.
+The verify skill uses `QUALITY_VERIFY_ENGINE` (see [Configuration](#configuration)),
+overridable per run with `--engine=agent|jev`. `constraint-check` always uses Jev. Both
+engines produce the same report and the same `json:verdict`.
 
 ## Quick start
 
@@ -139,18 +124,11 @@ constraint-check src/Invoice              # a file or directory
 constraint-check --dry-run --stdout        # inspect requests without calling the API
 ```
 
-Static rules still use the same local matcher. Semantic rules and the relevant file
-contents are sent to TypeSafe System One and require `TYPESAFE_API_KEY`. Export it in the
-shell or CI secret store; for local use the CLI also reads `TYPESAFE_API_KEY=...` from the
-checked project's `.env.local` when the variable is absent. Never commit that file—ensure
-the target project ignores it.
+`TYPESAFE_API_KEY` comes from the environment, or else from the project's `.env.local`.
 
-The gate passes only when verification is complete and there are no MUST violations;
-SHOULD findings remain warnings with either engine. The CLI exits `0` on success, `1`
-on constraint violations, and `2` on an incomplete check (API errors, missing answers,
-unreadable or oversized files). Files exceeding `--max-chars` (60,000 by default) are
-not sent partially: raise the limit or select the agent engine. Incomplete runs return
-`success: false` with an `errors` count in the verdict.
+The gate passes only when verification is complete and there are no MUST violations. The
+CLI exits `0` on success, `1` on violations, `2` on an incomplete check (API errors,
+missing answers, unreadable or oversized files).
 
 ```
 ## Constraints Check: FAILED ❌
@@ -159,24 +137,30 @@ Files: 12 | Static: 31 | Semantic: 4 | Violations: 1 | Warnings: 0 | Errors: 0
 - src/Controller/InvoiceController.php:42 CTL-002 (MUST): MUST NOT use ->getDoctrine()
 ```
 
-The report ends with a `json:verdict` block for a caller to parse. To use it in CI, configure
-the job to invoke the verification workflow and act on the verdict:
-
-```json
-{"success": false, "violations": 1, "warnings": 0}
-```
-
-An incomplete check has an `INCOMPLETE` report header and blocks even without a detected
-violation. CI must use `success` (or the CLI exit status), not only the violation count:
+The report ends with a `json:verdict` block. In CI, gate on `success` (or the exit
+status), not on `violations`: an incomplete check fails with zero violations.
 
 ```json
 {"success": false, "violations": 0, "warnings": 0, "errors": 1}
 ```
 
+## Configuration
+
+Artifacts live under `QUALITY_ROOT` (default `.ia/quality`): `code/` for the constraints,
+`onboard/` for onboarding state. Onboarding asks for it once and writes it to
+`.luciole.env` at the project root, to commit:
+
+```bash
+QUALITY_ROOT=.ia/quality
+QUALITY_VERIFY_ENGINE=agent   # or jev
+```
+
+A developer who needs different values puts them in `.luciole.local.env`.
+Precedence: process environment, `.luciole.local.env`, `.luciole.env`.
+
 ## Applying constraints
 
-You can use constraints in three ways, depending on how you work. These approaches can
-also be combined: using skills during development still leaves room for a review afterward.
+Three ways, combinable:
 
 ### 1. Use the skill mapping in the plan
 
@@ -198,20 +182,12 @@ For example, a plan entry could be: “Modify `src/Controller/InvoiceController.
 
 ### 2. Review after development
 
-You can develop without using the generated skills and check the result against the
-constraint files afterward with `/quality-constraints:quality-constraints-verify`.
+Develop without the skills, then run `/quality-constraints:quality-constraints-verify`.
 
 ### 3. Let Claude select skills from their descriptions
 
-The generated skills live in `.claude/skills/quality-{slug}/`. Their descriptions identify
-the file type and pattern, and state that the skill applies when matching files are added
-or modified. Claude Code uses descriptions to decide which skills to load for a task; see
-the [Claude Code skills documentation](https://code.claude.com/docs/en/slash-commands).
-
-You can give Claude the development task without explicitly naming a skill or consulting
-the mapping. Selection depends on Claude's assessment of the task; a matching description
-does not guarantee the skill will be used. You can request it explicitly or run the review
-command afterward when you want to check the result.
+Each generated skill's description names the files it applies to, so Claude Code can load
+it on its own. Not guaranteed: name the skill explicitly, or verify afterward.
 
 ## How onboarding works
 
@@ -238,13 +214,10 @@ express the proposed rules and investigates candidates that measurement could no
 ## The measurement loop
 
 Every verification report carries a `json:constraints-run` block: one verdict per rule
-checked, clean or not. `rule-stats report --reports=<glob>` projects those blocks (plus the
-`json:constraints-annotations` of past retrospectives) into per-rule statistics — nothing
-is stored anywhere else, the reports are the archive, and where they live is the caller's
-business. A retrospective uses this projection and a repository scan to flag globs matching
-no files, rules with no recorded violations, and candidates for checks in your own tooling.
-These are review signals: a rule with no violations may still be useful, and moving a
-semantic rule to a regex requires checking that the regex expresses it adequately.
+checked, clean or not. Keep the reports (`--reports=<dir>`): they are the only archive.
+`rule-stats report --reports=<glob>` turns them into per-rule statistics. A retrospective
+uses them to flag globs matching no files, rules that never fire, and rules better moved
+into your own tooling.
 
 ```
 /quality-constraints:quality-retrospective   # proposes improvements — never applies them
@@ -260,12 +233,9 @@ semantic rule to a regex requires checking that the regex expresses it adequatel
 
 ## Requirements
 
-- Claude Code for the plugin commands shown above; other agent harnesses need to load the
-  skills and resolve their script paths
-- Node.js (the engine's scripts and the tests)
-- Git (repository file discovery and diff checks)
-
-Installing the engine commands on your PATH is optional when using the plugins.
+- Claude Code
+- Node.js
+- Git
 
 <details>
 <summary>How <code>quality-onboard</code> finds the engine binaries</summary>

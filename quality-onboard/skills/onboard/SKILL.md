@@ -7,7 +7,7 @@ disable-model-invocation: true
 # Onboard
 
 `QUALITY_ROOT` is the harness-independent state root. `/quality-onboard:scope` asks for it
-once and stores it in the project-root `.luciole.env`; an uncommitted `.luciole.local.env`
+once and stores it in the project-root `.luciole.env`; `.luciole.local.env`
 beside it, then a process environment variable, can override it, and `.ia/quality` remains
 the fallback. Both `code/` deliverables and
 `onboard/` intermediate state live below it.

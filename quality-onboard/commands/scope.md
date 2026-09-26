@@ -26,7 +26,7 @@ The resulting file contains `QUALITY_ROOT="…"` and `QUALITY_VERIFY_ENGINE="…
 no secret and should be committed so every harness and contributor resolves the same
 configuration. If the file already exists, do not ask again. Explicit process environment
 variables remain temporary overrides and do not rewrite the file. A developer who needs a
-different value keeps it in an uncommitted `.luciole.local.env` beside it, which overrides
+different value keeps it in `.luciole.local.env` beside it, which overrides
 `.luciole.env` key by key; this step never writes that file.
 
 ## 1. Survey the types
