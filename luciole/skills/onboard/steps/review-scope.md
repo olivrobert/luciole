@@ -86,4 +86,4 @@ measurement behind it — to confirm, or to discard via `/luciole:onboard review
 This is the only point in the pipeline where a rule enters the deliverable
 without a script having counted it: the human has the final word on it.
 
-Once all slugs have been processed: `→ /luciole:onboard render`.
+Then: → `/luciole:onboard` for the next step — the next slug to review, or the render once all are done. On a large project, `/clear` first.

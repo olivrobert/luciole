@@ -110,4 +110,4 @@ on that, follow the message (`CONSTRAINT_KIT_BIN`, or `/luciole:install`).
 ## Output
 
 A table: slug, number of files, sample size, model, minPopulation. Nothing else.
-Then: `→ /luciole:onboard generate`.
+Then: → `/luciole:onboard` for the next step (generate).

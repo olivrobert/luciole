@@ -3,35 +3,10 @@
 // constraints. The script attests a content; the render command remains responsible
 // for only running `approve` after an explicit answer from the user.
 
-import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
-import { dirname, extname, join, relative } from 'node:path'
-import { APPROVAL_FILE, CONSTRAINTS_DIR } from './lib/candidates.mjs'
-
-function markdownFiles(dir) {
-  if (!existsSync(dir)) return []
-  const out = []
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const full = join(dir, entry.name)
-    if (entry.isDirectory()) out.push(...markdownFiles(full))
-    else if (entry.isFile() && extname(entry.name) === '.md') out.push(full)
-  }
-  return out.sort()
-}
-
-function constraintsHash() {
-  const files = markdownFiles(CONSTRAINTS_DIR)
-  if (files.length === 0) throw new Error(`no .md file in ${CONSTRAINTS_DIR}/`)
-
-  const hash = createHash('sha256')
-  for (const file of files) {
-    hash.update(relative(CONSTRAINTS_DIR, file))
-    hash.update('\0')
-    hash.update(readFileSync(file))
-    hash.update('\0')
-  }
-  return { hash: `sha256:${hash.digest('hex')}`, files: files.length }
-}
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { dirname } from 'node:path'
+import { APPROVAL_FILE } from './lib/candidates.mjs'
+import { constraintsHash } from './lib/approval.mjs'
 
 const action = process.argv[2]
 if (!['approve', 'check'].includes(action)) {

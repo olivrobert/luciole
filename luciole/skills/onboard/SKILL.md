@@ -1,7 +1,7 @@
 ---
 name: onboard
-description: Quality onboarding — the full run, or one of its five steps (scope, generate, review-scope, render, skills) — and a map of the pipeline, its artifacts, and the invariants that link them.
-argument-hint: "[scope | generate | review-scope [slug] | render | skills]"
+description: Quality onboarding — runs the next step the state on disk calls for, a named step, or the full run — and a map of the pipeline, its artifacts, and the invariants that link them.
+argument-hint: "[all | scope | generate | review-scope [slug] | render | skills]"
 allowed-tools: Read, Grep, Glob, Bash, Write, Edit, Task, Skill
 disable-model-invocation: true
 ---
@@ -30,19 +30,20 @@ This file executes nothing. Instructions live in `steps/`, facts in `references/
 | `/luciole:onboard render` | 7-10 | `constraints/{slug}.md`, `lint-backlog.md`, gate, human validation |
 | `/luciole:onboard skills` | 11 | one skill per scope + `skill-mapping.md` |
 
-## The full run
+## Choosing the step
 
 Arguments: $ARGUMENTS
 
 Plugin root: `${CLAUDE_PLUGIN_ROOT}`. The step files are read as plain files, so the plugin-root variable they cite is not expanded, and the shell does not define it either: substitute this path wherever a step or an agent prompt uses it.
 
-- **A step name** (`scope`, `generate`, `review-scope`, `render`, `skills`): read `${CLAUDE_PLUGIN_ROOT}/skills/onboard/steps/{step}.md` and apply it, nothing else. Words after the step name are its arguments (`review-scope entity`: the slug). The step names its successor when it ends; do not chain it.
-- **No argument**: the full run. Read each file in `${CLAUDE_PLUGIN_ROOT}/skills/onboard/steps/` in table order and apply it. Control goes back to the human once, after the `render` gate, to validate the delivered rules.
+- **No argument**: the next step. Run `node ${CLAUDE_PLUGIN_ROOT}/skills/onboard/scripts/next-step.mjs` from the project root; it prints `next: <step> [slug] — <why>`. Say which step it picked and why in one line, then apply that step as below, with its slug if any. On `next: done`, report the summary and stop.
+- **A step name** (`scope`, `generate`, `review-scope`, `render`, `skills`): read `${CLAUDE_PLUGIN_ROOT}/skills/onboard/steps/{step}.md` and apply it, nothing else. Words after the step name are its arguments (`review-scope entity`: the slug). The step ends by pointing to `/luciole:onboard`; do not chain the next one.
+- **`all`**: the full run, for a small project. Read each file in `${CLAUDE_PLUGIN_ROOT}/skills/onboard/steps/` in table order and apply it. Control goes back to the human once, after the `render` gate, to validate the delivered rules.
 - **Anything else**: list the five steps and stop.
 
 A script that exits with an error **stops the run**. Moving on and hoping the gate catches it means wrong files get written first.
 
-On a project with several scopes of 40+ files, do not run it in one go: the review step saturates a single context (each slug chains a review and an application, and the 6→4 loop can need two passes). Run the five steps one by one, with a `/clear` between two `/luciole:onboard review-scope <slug>` calls.
+On a project with several scopes of 40+ files, do not use `all`: the review step saturates a single context (each slug chains a review and an application, and the 6→4 loop can need two passes). Call `/luciole:onboard` repeatedly instead, with a `/clear` between two calls: each one runs a single step, or a single slug of the review.
 
 ## What protects the orchestrator's context
 

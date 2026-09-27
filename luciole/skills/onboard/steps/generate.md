@@ -69,4 +69,4 @@ are kept; the others go back to `a-revoir` (to-review), **without discarding any
 ## Output
 
 A table: slug, rules kept, discarded, `a-revoir` (to-review). Nothing else.
-Then: `→ /luciole:onboard review-scope [slug]`, listing the slugs to review.
+Then: → `/luciole:onboard` for the next step (the review, one slug at a time), listing the slugs to review.

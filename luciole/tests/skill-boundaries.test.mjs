@@ -26,6 +26,7 @@ test('onboard stays an orchestrator and loads its details on demand', () => {
     'scripts/verify-onboard.mjs',
     'scripts/render-review.mjs',
     'scripts/approval.mjs',
+    'scripts/next-step.mjs',
   ]) {
     assert.ok(existsSync(join(ONBOARD, resource)), `missing: ${resource}`)
   }
@@ -62,6 +63,10 @@ test('the pipeline\'s five steps exist and SKILL.md does not duplicate them', ()
   // Claude Code expands the plugin root in the SKILL.md it loads, not in the step files read
   // afterwards, and the shell does not define it: SKILL.md must hand over the resolved path.
   assert.match(skill, /Plugin root: `\$\{CLAUDE_PLUGIN_ROOT\}`/, 'SKILL.md no longer hands the plugin root to the steps')
+
+  // Without an argument, the step comes from the state on disk, not from the model's reading
+  // of it: that is what lets a user who knows no step name resume the run.
+  assert.match(skill, /scripts\/next-step\.mjs/, 'onboard no longer resumes from the state on disk')
 
   // A step is read, it is not copied: SKILL.md names the deterministic scripts (that's
   // its map) but calls no agent itself.

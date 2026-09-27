@@ -76,4 +76,4 @@ this approval.
 
 The files written, the gate's verdict, and, after the user's response, the
 verdict of the human validation. Nothing else.
-Then: `→ /luciole:onboard skills`.
+Then: → `/luciole:onboard` for the next step (skills).

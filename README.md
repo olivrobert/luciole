@@ -121,6 +121,9 @@ Then, inside your project:
 /luciole:onboard
 ```
 
+Each call runs the next onboarding step, read from the state on disk: call it again until it
+reports the onboarding done (`/luciole:onboard all` chains every step, for a small project).
+
 Onboarding proposes and reviews rules, then writes the constraint files for you to inspect:
 
 - `${QUALITY_ROOT}/code/constraints/` — one constraint file per file type, derived from your
@@ -229,9 +232,9 @@ it on its own. Not guaranteed: name the skill explicitly, or verify afterward.
 
 ## How onboarding works
 
-`/luciole:onboard` coordinates five steps, with approval before skill generation.
-Pass a step name to run that step alone. State is stored on disk, so you can `/clear` between
-calls to manage context on larger projects.
+`/luciole:onboard` coordinates five steps, with approval before skill generation. Without
+an argument it runs the next one; pass a step name to run that step alone. State is stored
+on disk, so you can `/clear` between calls to manage context on larger projects.
 
 | Step | Invocation | What it does | Writes |
 |---|---|---|---|
@@ -280,7 +283,7 @@ into your own tooling.
 |---|---|
 | **Engine** | [`SPEC.md`](luciole/SPEC.md) (normative grammar), the matcher, the format linter (`constraint-lint`), the optional TypeSafe CLI (`constraint-check`), the candidate measurer (`measure-candidates`), the measurement projection (`rule-stats`). |
 | **Verification** | `/luciole:verify`, `/luciole:update`, `/luciole:retrospective`. |
-| **Onboarding** | `/luciole:onboard`, alone for the whole run or with a step name (`scope`, `generate`, `review-scope`, `render`, `skills`). Generates constraints and scaffolding skills from the project. |
+| **Onboarding** | `/luciole:onboard`, alone for the next step, `all` for the whole run, or a step name (`scope`, `generate`, `review-scope`, `render`, `skills`). Generates constraints and scaffolding skills from the project. |
 
 ## Requirements
 
