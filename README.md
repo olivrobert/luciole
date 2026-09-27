@@ -87,7 +87,7 @@ CTL-004 | present | RoutePrefix::   | MUST use RoutePrefix constants | via=phpst
 
 Static rules run as a regex, line by line. Semantic rules are assessed by the selected
 engine; SHOULD findings never block. A `via=` annotation declares that your own tooling
-handles the rule, so the checker skips it. [`SPEC.md`](quality-constraints/SPEC.md) defines
+handles the rule, so the checker skips it. [`SPEC.md`](luciole/SPEC.md) defines
 the format; `constraint-lint` checks it.
 
 ## Verification engines
@@ -96,8 +96,8 @@ Static rules always run locally, in the matcher. Only the semantic rules change 
 
 | | `agent` (default) | `jev` |
 |---|---|---|
-| Who judges | Claude Code: the verify skill inlines small groups and dispatches `quality-constraints-checker` agents for the rest | Jev, through the TypeSafe API — one request per file, one question per rule |
-| Entry point | `/quality-constraints:quality-constraints-verify` | the same skill with `--engine=jev`, or the standalone `constraint-check` CLI |
+| Who judges | Claude Code: the verify skill inlines small groups and dispatches `luciole:checker` agents for the rest | Jev, through the TypeSafe API — one request per file, one question per rule |
+| Entry point | `/luciole:verify` | the same skill with `--engine=jev`, or the standalone `constraint-check` CLI |
 | Needs | a Claude Code session | `TYPESAFE_API_KEY`; no agent, usable in CI from a plain shell |
 | Sends out | files to the Claude session | semantic rules and file contents to TypeSafe |
 | Limits | agent context | files over `--max-chars` (60,000) are not sent: the check is incomplete |
@@ -112,14 +112,13 @@ In Claude Code:
 
 ```
 /plugin marketplace add olivrobert/luciole
-/plugin install quality-constraints@olivier-robert
-/plugin install quality-onboard@olivier-robert
+/plugin install luciole@olivier-robert
 ```
 
 Then, inside your project:
 
 ```
-/quality-onboard:onboard
+/luciole:onboard
 ```
 
 Onboarding proposes and reviews rules, then writes the constraint files for you to inspect:
@@ -140,15 +139,15 @@ or review.
 Run verification when you want to check a change against the applicable constraints:
 
 ```
-/quality-constraints:quality-constraints-verify              # current git diff
-/quality-constraints:quality-constraints-verify src/Invoice  # a directory
-/quality-constraints:quality-constraints-verify --reports=var/reports  # save reports
-/quality-constraints:quality-constraints-verify --engine=jev         # override the configured engine
-/quality-constraints:quality-constraints-verify --engine=agent       # use agent verification
+/luciole:verify              # current git diff
+/luciole:verify src/Invoice  # a directory
+/luciole:verify --reports=var/reports  # save reports
+/luciole:verify --engine=jev         # override the configured engine
+/luciole:verify --engine=agent       # use agent verification
 ```
 
 For an agent-free semantic check, install the optional binaries with
-`/quality-constraints:install`, then run the TypeSafe-backed CLI:
+`/luciole:install`, then run the TypeSafe-backed CLI:
 
 ```bash
 constraint-check                          # current git diff
@@ -221,7 +220,7 @@ For example, a plan entry could be: “Modify `src/Controller/InvoiceController.
 
 ### 2. Review after development
 
-Develop without the skills, then run `/quality-constraints:quality-constraints-verify`.
+Develop without the skills, then run `/luciole:verify`.
 
 ### 3. Let Claude select skills from their descriptions
 
@@ -230,17 +229,17 @@ it on its own. Not guaranteed: name the skill explicitly, or verify afterward.
 
 ## How onboarding works
 
-`/quality-onboard:onboard` coordinates five steps, with approval before skill generation.
+`/luciole:onboard` coordinates five steps, with approval before skill generation.
 You can also run the steps separately. State is stored on disk, so you can `/clear` between
 calls to manage context on larger projects.
 
 | Step | Command | What it does | Writes |
 |---|---|---|---|
-| 1 | `/quality-onboard:scope` | selects the file types and records the files in each scope | `scopes.json` |
-| 2 | `/quality-onboard:generate` | proposes rules per type, validates their format, and measures available probes across each scope | `candidates/{slug}.json` |
-| 3 | `/quality-onboard:review [slug]` | a read-only reviewer judges one scope, an applier applies its findings | `findings/{slug}.json` |
-| 4 | `/quality-onboard:render` | renders the constraints and the tooling backlog, runs the gate, asks for your approval | `constraints/{slug}.md`, `approval.json` |
-| 5 | `/quality-onboard:skills` | after approval, one skill per scope, plus the mapping | `.claude/skills/` |
+| 1 | `/luciole:scope` | selects the file types and records the files in each scope | `scopes.json` |
+| 2 | `/luciole:generate` | proposes rules per type, validates their format, and measures available probes across each scope | `candidates/{slug}.json` |
+| 3 | `/luciole:review-scope [slug]` | a read-only reviewer judges one scope, an applier applies its findings | `findings/{slug}.json` |
+| 4 | `/luciole:render` | renders the constraints and the tooling backlog, runs the gate, asks for your approval | `constraints/{slug}.md`, `approval.json` |
+| 5 | `/luciole:skills` | after approval, one skill per scope, plus the mapping | `.claude/skills/` |
 
 After `render`, you are asked to read and approve the constraint files before skills are
 generated. Approval is tied to their contents; editing a constraint invalidates it.
@@ -271,16 +270,17 @@ uses them to flag globs matching no files, rules that never fire, and rules bett
 into your own tooling.
 
 ```
-/quality-constraints:quality-retrospective   # proposes improvements — never applies them
-/quality-constraints:constraint-update       # applies a rule change, with your approval
+/luciole:retrospective   # proposes improvements — never applies them
+/luciole:update       # applies a rule change, with your approval
 ```
 
-## Plugins
+## What the plugin ships
 
-| Plugin | What it brings |
+| Part | What it brings |
 |---|---|
-| **quality-constraints** | The engine: [`SPEC.md`](quality-constraints/SPEC.md) (normative grammar), the matcher, the format linter (`constraint-lint`), the optional TypeSafe CLI (`constraint-check`), the candidate measurer (`measure-candidates`), the measurement projection (`rule-stats`), the verify/review skill, `constraint-update` and `quality-retrospective`. |
-| **quality-onboard** | The onboarding layer: `/scope`, `/generate`, `/review`, `/render`, `/skills` (or `/onboard` for the whole run). Generates constraints and scaffolding skills from the project. Depends on `quality-constraints`. |
+| **Engine** | [`SPEC.md`](luciole/SPEC.md) (normative grammar), the matcher, the format linter (`constraint-lint`), the optional TypeSafe CLI (`constraint-check`), the candidate measurer (`measure-candidates`), the measurement projection (`rule-stats`). |
+| **Verification** | `/luciole:verify`, `/luciole:update`, `/luciole:retrospective`. |
+| **Onboarding** | `/luciole:scope`, `/luciole:generate`, `/luciole:review-scope`, `/luciole:render`, `/luciole:skills` (or `/luciole:onboard` for the whole run). Generates constraints and scaffolding skills from the project. |
 
 ## Requirements
 
@@ -289,15 +289,14 @@ into your own tooling.
 - Git
 
 <details>
-<summary>How <code>quality-onboard</code> finds the engine binaries</summary>
+<summary>How onboarding finds the engine binaries</summary>
 
-`quality-onboard` needs the `quality-constraints` engine binaries (`constraint-lint`,
-`measure-candidates`). Its scripts resolve them on their own, in this order: the
-`CONSTRAINT_KIT_BIN` environment variable (a directory), the sibling
-`quality-constraints/bin` of a repository clone, the plugin cache, then the PATH. The first
-onboarding step (`/quality-onboard:scope`) checks this before any agent runs.
+Onboarding needs the engine binaries (`constraint-lint`, `measure-candidates`). Its
+scripts resolve them on their own, in this order: the `CONSTRAINT_KIT_BIN` environment
+variable (a directory), the plugin's own `bin/`, then the PATH. The first
+onboarding step (`/luciole:scope`) checks this before any agent runs.
 
-Optional: `/quality-constraints:install` puts `constraint-check`, `constraint-lint`,
+Optional: `/luciole:install` puts `constraint-check`, `constraint-lint`,
 `rule-stats` and `measure-candidates` on your PATH, for terminal and CI use, or when none
 of the locations above applies.
 

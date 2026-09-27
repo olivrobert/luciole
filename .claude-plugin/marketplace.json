@@ -8,14 +8,9 @@
   },
   "plugins": [
     {
-      "name": "quality-constraints",
-      "description": "The constraint engine: file format (SPEC), matcher, format linter, measurement store, diff/directory verification for reviews, constraint editing and retrospective. Language-agnostic.",
-      "source": "./quality-constraints"
-    },
-    {
-      "name": "quality-onboard",
-      "description": "The onboarding layer: analyzes an existing codebase, measures its conventions, writes the constraint files and generates the project's own scaffolding skills. Nothing generic ships with it: every rule, model and tool reference is derived from the project.",
-      "source": "./quality-onboard"
+      "name": "luciole",
+      "description": "Turn a codebase's unwritten conventions into checks: onboarding derives measured constraint files from the project's own code, verification checks every change against them, and a retrospective keeps them honest. Language-agnostic.",
+      "source": "./luciole"
     }
   ]
 }

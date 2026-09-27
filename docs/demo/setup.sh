@@ -9,7 +9,7 @@ dir="$(mktemp -d "${TMPDIR:-/tmp}/luciole-demo.XXXXXX")"
 
 cp -R "$here/project/." "$dir/"
 mkdir -p "$dir/bin"
-ln -s "$here/../../quality-constraints/bin/constraint-check" "$dir/bin/constraint-check"
+ln -s "$here/../../luciole/bin/constraint-check" "$dir/bin/constraint-check"
 
 cd "$dir"
 git init -q
