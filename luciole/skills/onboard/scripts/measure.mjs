@@ -10,7 +10,7 @@
 // Usage: node measure.mjs [--threshold R] [--min-population N] [--slug S]
 //
 // `--slug` restricts the measurement to one scope. That's what keeps the 6→4 loop workable
-// once the run is split into commands: `/luciole:review-scope entity` re-measures entity, and
+// once the run is split into commands: `/luciole:onboard review-scope entity` re-measures entity, and
 // doesn't touch the JSON of other slugs — which another command may be fixing at the same time.
 //
 // `--min-population` with no explicit value is read per scope from `scopes.json`

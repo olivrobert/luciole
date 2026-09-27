@@ -51,7 +51,7 @@ Aggregate violations BY rule across the reports, cross-reference with `rule-stat
 
 **Annotations.** A report sometimes lists a violation and, in its own prose, argues it is unfounded ("conforme à l'intention de la règle", "l'aligner divergerait de la famille") — the checker fired, the fixer disagreed, and the run document still says `fail`. That information is lost unless you record it: for each such case, note `{rule, ticket, reason}` for Phase 3. Take the `rule` id from the run's `*-constraints.json` (`rules[].rule`, never recompute it). Only a violation the report itself dismisses qualifies — your own doubt about a rule is a proposal, not an annotation. A run document already carrying `verdict: "false-positive"` for it needs no annotation.
 
-**MODEL PROMOTION.** Designate a candidate from the scope's population (`glob - exclude`): prefer one repeatedly cited as `evidence` in the candidates JSON, never one appearing in a report's violations. Regular entry in the dated proposal file; its **Apply** line is manual: set `"model": "{path}"` on the scope in `scopes.json`, then re-run `/luciole:skills`. Skip a scope whose `model` is already set.
+**MODEL PROMOTION.** Designate a candidate from the scope's population (`glob - exclude`): prefer one repeatedly cited as `evidence` in the candidates JSON, never one appearing in a report's violations. Regular entry in the dated proposal file; its **Apply** line is manual: set `"model": "{path}"` on the scope in `scopes.json`, then re-run `/luciole:onboard skills`. Skip a scope whose `model` is already set.
 
 **TOOL PROMOTION.** A rule nobody violates is a candidate for cheaper enforcement. Destination depends on whether the project is onboarded:
 

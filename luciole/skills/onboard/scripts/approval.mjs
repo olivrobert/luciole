@@ -59,7 +59,7 @@ if (action === 'approve') {
 }
 
 if (!existsSync(APPROVAL_FILE)) {
-  console.error(`approval: ${APPROVAL_FILE} missing — run /luciole:render and validate the rules`)
+  console.error(`approval: ${APPROVAL_FILE} missing — run /luciole:onboard render and validate the rules`)
   process.exit(1)
 }
 
@@ -72,7 +72,7 @@ try {
 }
 
 if (approval.constraintsHash !== current.hash) {
-  console.error('approval: constraints changed since human validation — rerun /luciole:render')
+  console.error('approval: constraints changed since human validation — rerun /luciole:onboard render')
   process.exit(1)
 }
 

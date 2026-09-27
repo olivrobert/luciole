@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 const HERE = dirname(fileURLToPath(import.meta.url))
 const PLUGIN = join(HERE, '..')
 const ONBOARD = join(PLUGIN, 'skills', 'onboard')
+const STEPS = ['scope', 'generate', 'review-scope', 'render', 'skills']
 
 // onboard orchestrates: facts live in references/, roles in agents/, the
 // deterministic part in scripts/. A SKILL.md that grows is a SKILL.md that has reabsorbed one
@@ -48,27 +49,33 @@ test('onboard keeps its two deterministic steps', () => {
   assert.match(skill, /constraint-lint/, 'the conformity gate has vanished from the orchestration')
 })
 
-// SKILL.md has become a map: execution lives in commands/. A SKILL.md that
-// reabsorbs a step is a SKILL.md re-read in full by four commands instead of one.
-test('the pipeline\'s four commands exist and SKILL.md does not duplicate them', () => {
+// SKILL.md has become a map: execution lives in steps/. A SKILL.md that reabsorbs a
+// step is a SKILL.md that carries every step's detail, whichever one was asked for.
+test('the pipeline\'s five steps exist and SKILL.md does not duplicate them', () => {
   const skill = readFileSync(join(ONBOARD, 'SKILL.md'), 'utf8')
 
-  // No commands/onboard.md: the full run is the skill itself, and two entries
-  // for `/luciole:onboard` would fight over the same name.
-  for (const command of ['scope.md', 'generate.md', 'review-scope.md', 'render.md']) {
-    assert.ok(existsSync(join(PLUGIN, 'commands', command)), `missing: commands/${command}`)
+  for (const step of STEPS) {
+    assert.ok(existsSync(join(ONBOARD, 'steps', `${step}.md`)), `missing: steps/${step}.md`)
+    assert.match(skill, new RegExp(`/luciole:onboard ${step}\\b`), `SKILL.md does not route to ${step}`)
   }
 
-  // A command is invoked, it is not copied: SKILL.md names the deterministic
-  // scripts (that's its map) but calls no agent itself.
-  assert.doesNotMatch(skill, /Agent\(subagent_type/, 'SKILL.md launches an agent: that\'s a command\'s job')
-  assert.equal(existsSync(join(PLUGIN, 'commands', 'onboard.md')), false, 'commands/onboard.md collides with the onboard skill')
+  // A step is read, it is not copied: SKILL.md names the deterministic scripts (that's
+  // its map) but calls no agent itself.
+  assert.doesNotMatch(skill, /Agent\(subagent_type/, 'SKILL.md launches an agent: that\'s a step\'s job')
 })
 
-// The split only holds if state lives on disk. Each command must be able to
+// Once the project is onboarded, the steps would only clutter the `/luciole:` menu: they are
+// arguments of the onboard skill, never commands of their own.
+test('the onboarding steps are not user commands', () => {
+  for (const step of [...STEPS, 'onboard']) {
+    assert.equal(existsSync(join(PLUGIN, 'commands', `${step}.md`)), false, `commands/${step}.md is back in the menu`)
+  }
+})
+
+// The split only holds if state lives on disk. Each step must be able to
 // start with no knowledge of what the previous one had in context.
-test('each command names the artifacts it depends on', () => {
-  const read = (name) => readFileSync(join(PLUGIN, 'commands', name), 'utf8')
+test('each step names the artifacts it depends on', () => {
+  const read = (name) => readFileSync(join(ONBOARD, 'steps', name), 'utf8')
 
   assert.match(read('scope.md'), /scopes\.json/, 'scope does not write scopes.json')
   assert.match(read('generate.md'), /scopes\.json/, 'generate does not read scopes.json')

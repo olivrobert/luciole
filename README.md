@@ -230,16 +230,16 @@ it on its own. Not guaranteed: name the skill explicitly, or verify afterward.
 ## How onboarding works
 
 `/luciole:onboard` coordinates five steps, with approval before skill generation.
-You can also run the steps separately. State is stored on disk, so you can `/clear` between
+Pass a step name to run that step alone. State is stored on disk, so you can `/clear` between
 calls to manage context on larger projects.
 
-| Step | Command | What it does | Writes |
+| Step | Invocation | What it does | Writes |
 |---|---|---|---|
-| 1 | `/luciole:scope` | selects the file types and records the files in each scope | `scopes.json` |
-| 2 | `/luciole:generate` | proposes rules per type, validates their format, and measures available probes across each scope | `candidates/{slug}.json` |
-| 3 | `/luciole:review-scope [slug]` | a read-only reviewer judges one scope, an applier applies its findings | `findings/{slug}.json` |
-| 4 | `/luciole:render` | renders the constraints and the tooling backlog, runs the gate, asks for your approval | `constraints/{slug}.md`, `approval.json` |
-| 5 | `/luciole:skills` | after approval, one skill per scope, plus the mapping | `.claude/skills/` |
+| 1 | `/luciole:onboard scope` | selects the file types and records the files in each scope | `scopes.json` |
+| 2 | `/luciole:onboard generate` | proposes rules per type, validates their format, and measures available probes across each scope | `candidates/{slug}.json` |
+| 3 | `/luciole:onboard review-scope [slug]` | a read-only reviewer judges one scope, an applier applies its findings | `findings/{slug}.json` |
+| 4 | `/luciole:onboard render` | renders the constraints and the tooling backlog, runs the gate, asks for your approval | `constraints/{slug}.md`, `approval.json` |
+| 5 | `/luciole:onboard skills` | after approval, one skill per scope, plus the mapping | `.claude/skills/` |
 
 After `render`, you are asked to read and approve the constraint files before skills are
 generated. Approval is tied to their contents; editing a constraint invalidates it.
@@ -280,7 +280,7 @@ into your own tooling.
 |---|---|
 | **Engine** | [`SPEC.md`](luciole/SPEC.md) (normative grammar), the matcher, the format linter (`constraint-lint`), the optional TypeSafe CLI (`constraint-check`), the candidate measurer (`measure-candidates`), the measurement projection (`rule-stats`). |
 | **Verification** | `/luciole:verify`, `/luciole:update`, `/luciole:retrospective`. |
-| **Onboarding** | `/luciole:scope`, `/luciole:generate`, `/luciole:review-scope`, `/luciole:render`, `/luciole:skills` (or `/luciole:onboard` for the whole run). Generates constraints and scaffolding skills from the project. |
+| **Onboarding** | `/luciole:onboard`, alone for the whole run or with a step name (`scope`, `generate`, `review-scope`, `render`, `skills`). Generates constraints and scaffolding skills from the project. |
 
 ## Requirements
 
@@ -294,7 +294,7 @@ into your own tooling.
 Onboarding needs the engine binaries (`constraint-lint`, `measure-candidates`). Its
 scripts resolve them on their own, in this order: the `CONSTRAINT_KIT_BIN` environment
 variable (a directory), the plugin's own `bin/`, then the PATH. The first
-onboarding step (`/luciole:scope`) checks this before any agent runs.
+onboarding step (`/luciole:onboard scope`) checks this before any agent runs.
 
 Optional: `/luciole:install` puts `constraint-check`, `constraint-lint`,
 `rule-stats` and `measure-candidates` on your PATH, for terminal and CI use, or when none

@@ -1,15 +1,9 @@
----
-description: Steps 5 and 6 of the onboarding — in-depth review of a scope's candidates, then applying the findings. Optional argument: the slug.
-argument-hint: "[slug]"
-allowed-tools: Read, Bash, Task
----
-
 # Onboard — in-depth review
 
 Resolve `QUALITY_ROOT` from the environment, then `.luciole.local.env`,
 then `.luciole.env`, defaulting to `.ia/quality`. Every path below is relative to that root.
 
-Argument: `$1` — the slug to review. Without an argument, processes all slugs present in
+Argument: the slug to review (the word after `review-scope`). Without an argument, processes all slugs present in
 `${QUALITY_ROOT}/onboard/candidates/`, **one at a time**, never in parallel.
 
 This is the step that has the final word. A script has measured; no one has judged yet.
@@ -88,8 +82,8 @@ One line per slug processed: findings, applied, discarded, loop rounds.
 
 If the applier reported rules **kept without a probe**, list them separately —
 id and statement — with this note: "kept on manual review, no mechanical
-measurement behind it — to confirm, or to discard via `/luciole:review-scope <slug>`".
+measurement behind it — to confirm, or to discard via `/luciole:onboard review-scope <slug>`".
 This is the only point in the pipeline where a rule enters the deliverable
 without a script having counted it: the human has the final word on it.
 
-Once all slugs have been processed: `→ /luciole:render`.
+Once all slugs have been processed: `→ /luciole:onboard render`.

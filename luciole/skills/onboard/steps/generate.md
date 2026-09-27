@@ -1,15 +1,10 @@
----
-description: Steps 2 to 4 of the onboarding — generates rule candidates per scope, checks their shape, measures them.
-allowed-tools: Read, Bash, Task
----
-
 # Onboard — generation and measurement
 
 Resolve `QUALITY_ROOT` from the environment, then `.luciole.local.env`,
 then `.luciole.env`, defaulting to `.ia/quality`. Every path below is relative to that root.
 
-Prerequisite: `${QUALITY_ROOT}/onboard/scopes.json`, written by `/luciole:scope`.
-If it is missing, stop and point back to that command.
+Prerequisite: `${QUALITY_ROOT}/onboard/scopes.json`, written by `/luciole:onboard scope`.
+If it is missing, stop and point back to that step.
 
 ```
 node ${CLAUDE_PLUGIN_ROOT}/skills/onboard/scripts/validate-scopes.mjs
@@ -74,4 +69,4 @@ are kept; the others go back to `a-revoir` (to-review), **without discarding any
 ## Output
 
 A table: slug, rules kept, discarded, `a-revoir` (to-review). Nothing else.
-Then: `→ /luciole:review-scope [slug]`, listing the slugs to review.
+Then: `→ /luciole:onboard review-scope [slug]`, listing the slugs to review.

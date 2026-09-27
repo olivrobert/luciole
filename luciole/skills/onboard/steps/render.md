@@ -1,8 +1,3 @@
----
-description: Steps 7 to 10 of the onboarding — renders the constraints and backlog, passes the gate, then requests human validation.
-allowed-tools: Read, Bash
----
-
 # Onboard — rendering, gate, and human validation
 
 Resolve `QUALITY_ROOT` from the environment, then `.luciole.local.env`,
@@ -25,7 +20,7 @@ the `slug` if none.
 
 The script refuses the entire run — without writing anything — if a rule
 remains in `a-revoir` (to-review): rendering it would mean deciding in place of step 5.
-In that case, go back to `/luciole:review-scope <slug>` for the offending scope.
+In that case, go back to `/luciole:onboard review-scope <slug>` for the offending scope.
 
 ## 8. Tooling backlog
 
@@ -81,4 +76,4 @@ this approval.
 
 The files written, the gate's verdict, and, after the user's response, the
 verdict of the human validation. Nothing else.
-Then: `→ /luciole:skills`.
+Then: `→ /luciole:onboard skills`.

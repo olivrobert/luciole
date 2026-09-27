@@ -1,8 +1,3 @@
----
-description: Step 1 of the onboarding — surveys the project's file types and fixes the scope contract in scopes.json.
-allowed-tools: Read, Grep, Glob, Bash, Write
----
-
 # Onboard — scopes
 
 Resolve `QUALITY_ROOT` from the environment, then `.luciole.local.env`,
@@ -115,4 +110,4 @@ on that, follow the message (`CONSTRAINT_KIT_BIN`, or `/luciole:install`).
 ## Output
 
 A table: slug, number of files, sample size, model, minPopulation. Nothing else.
-Then: `→ /luciole:generate`.
+Then: `→ /luciole:onboard generate`.

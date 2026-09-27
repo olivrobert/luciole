@@ -1,8 +1,3 @@
----
-description: Step 11 of the onboarding — generates the project's creation skills, one per scope, each routing to its constraints file.
-allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Skill
----
-
 # Onboard — skills
 
 Resolve `QUALITY_ROOT` from the environment, then `.luciole.local.env`,
@@ -23,7 +18,7 @@ node ${CLAUDE_PLUGIN_ROOT}/skills/onboard/scripts/approval.mjs check
 ```
 
 A missing approval, or one whose hash no longer matches the constraints, stops
-the command and points back to `/luciole:render`. A skill rendered from
+the command and points back to `/luciole:onboard render`. A skill rendered from
 ungated or unapproved constraints routes to rules that are wrong.
 
 ## 11a. The skill, scope by scope
