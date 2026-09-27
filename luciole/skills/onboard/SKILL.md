@@ -34,6 +34,8 @@ This file executes nothing. Instructions live in `steps/`, facts in `references/
 
 Arguments: $ARGUMENTS
 
+Plugin root: `${CLAUDE_PLUGIN_ROOT}`. The step files are read as plain files, so the plugin-root variable they cite is not expanded, and the shell does not define it either: substitute this path wherever a step or an agent prompt uses it.
+
 - **A step name** (`scope`, `generate`, `review-scope`, `render`, `skills`): read `${CLAUDE_PLUGIN_ROOT}/skills/onboard/steps/{step}.md` and apply it, nothing else. Words after the step name are its arguments (`review-scope entity`: the slug). The step names its successor when it ends; do not chain it.
 - **No argument**: the full run. Read each file in `${CLAUDE_PLUGIN_ROOT}/skills/onboard/steps/` in table order and apply it. Control goes back to the human once, after the `render` gate, to validate the delivered rules.
 - **Anything else**: list the five steps and stop.

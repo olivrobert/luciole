@@ -59,6 +59,10 @@ test('the pipeline\'s five steps exist and SKILL.md does not duplicate them', ()
     assert.match(skill, new RegExp(`/luciole:onboard ${step}\\b`), `SKILL.md does not route to ${step}`)
   }
 
+  // Claude Code expands the plugin root in the SKILL.md it loads, not in the step files read
+  // afterwards, and the shell does not define it: SKILL.md must hand over the resolved path.
+  assert.match(skill, /Plugin root: `\$\{CLAUDE_PLUGIN_ROOT\}`/, 'SKILL.md no longer hands the plugin root to the steps')
+
   // A step is read, it is not copied: SKILL.md names the deterministic scripts (that's
   // its map) but calls no agent itself.
   assert.doesNotMatch(skill, /Agent\(subagent_type/, 'SKILL.md launches an agent: that\'s a step\'s job')
