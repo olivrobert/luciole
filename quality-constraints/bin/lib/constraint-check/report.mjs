@@ -9,7 +9,7 @@
 // recording only failures would bias the sample.
 
 import { mkdirSync, writeFileSync } from 'node:fs'
-import { dirname } from 'node:path'
+import { dirname, isAbsolute, relative } from 'node:path'
 
 export const FORMAT = 'constraints-run/1'
 
@@ -141,7 +141,7 @@ function renderStatic(violations) {
     for (const [file, rows] of groupByFile(violations)) {
         lines.push('', `#### ${file}`)
         for (const row of rows) {
-            lines.push(`- **${row.id}** (${row.severity})${formatLines(row)}: ${row.message}`)
+            lines.push(`- **${row.id}** (${row.severity})${formatLines(row)}: ${displayMessage(row)}`)
         }
     }
 
@@ -156,7 +156,7 @@ function renderSemantic(findings) {
     for (const [file, rows] of groupByFile(findings)) {
         lines.push('', `#### ${file}`)
         for (const row of rows) {
-            lines.push(`- **${row.id}** (${row.severity}): ${row.message}`)
+            lines.push(`- **${row.id}** (${row.severity}): ${displayMessage(row)}`)
             if (typeof row.violation === 'number') {
                 lines.push(`  p(violation) = ${row.violation.toFixed(2)}${formatTrigger(row)}`)
             }
@@ -165,6 +165,14 @@ function renderSemantic(findings) {
     }
 
     return lines
+}
+
+// A message often opens with its own severity ("MUST NOT: …"), which the renders already
+// print in parentheses: drop the repeat on display, the document keeps the message whole.
+function displayMessage(row) {
+    const prefix = `${row.severity}:`
+
+    return row.message.startsWith(prefix) ? row.message.slice(prefix.length).trimStart() : row.message
 }
 
 function renderSummary(summary) {
@@ -189,20 +197,27 @@ export function renderSummaryLine(doc, { reportPath, dataPath } = {}) {
     ]
 
     for (const row of doc.staticViolations) {
-        lines.push(`- ${row.file}${formatLine(row)} ${row.id} (${row.severity}): ${row.message}`)
+        lines.push(`- ${row.file}${formatLine(row)} ${row.id} (${row.severity}): ${displayMessage(row)}`)
     }
     for (const row of doc.semanticViolations) {
         const p = typeof row.violation === 'number' ? ` [p=${row.violation.toFixed(2)}]` : ''
-        lines.push(`- ${row.file} ${row.id} (${row.severity}): ${row.message}${p}`)
+        lines.push(`- ${row.file} ${row.id} (${row.severity}): ${displayMessage(row)}${p}`)
     }
     for (const error of doc.errors) {
         lines.push(`- ERROR ${error.file ?? '(run)'}: ${error.message}`)
     }
 
-    if (reportPath) lines.push('', `Full report: ${reportPath}`)
-    if (dataPath) lines.push(`Run data: ${dataPath}`)
+    if (reportPath) lines.push('', `Full report: ${displayPath(reportPath)}`)
+    if (dataPath) lines.push(`Run data: ${displayPath(dataPath)}`)
 
     return `${lines.join('\n')}\n`
+}
+
+// Relative to the working directory when the file lies under it, absolute otherwise.
+function displayPath(path) {
+    const fromCwd = relative(process.cwd(), path)
+
+    return fromCwd && !fromCwd.startsWith('..') && !isAbsolute(fromCwd) ? fromCwd : path
 }
 
 export function renderVerdict(verdict) {

@@ -347,8 +347,9 @@ test('a run writes the JSON document and a markdown report free of data blocks',
   const root = checkProject({ staticRules: 'HDL-001 | present | strict_types | MUST: declare strict_types' })
   const result = check(root, ['--ticket=PROJ-1'], { body: { answers: { t0: { noul: 0.99 }, c0: { noul: 0.1 } } } })
   assert.equal(result.status, 1, result.stderr)
-  assert.match(result.stdout, /Full report: .*-constraints\.md/)
-  assert.match(result.stdout, /Run data: .*-constraints\.json/)
+  // Paths under the working directory print relative to it.
+  assert.match(result.stdout, /Full report: \.quality-artifacts\/code\/reports\/constraints\/\d{8}-\d{6}-constraints\.md\n/)
+  assert.match(result.stdout, /Run data: \.quality-artifacts\/code\/reports\/constraints\/\d{8}-\d{6}-constraints\.json\n/)
 
   const { data, report } = readRun(root)
   assert.equal(data.format, FORMAT)
@@ -361,6 +362,22 @@ test('a run writes the JSON document and a markdown report free of data blocks',
   assert.match(report, /Ticket: PROJ-1/)
   assert.match(report, /### Static Violations \(grep\)/)
   assert.match(report, /### Semantic Violations\n/)
+})
+
+test('renders print a severity once, the document keeps the message whole', () => {
+  const root = checkProject({
+    staticRules: 'HDL-001 | present | strict_types | MUST: declare strict_types',
+    semantic: 'MUST NOT: Depend on infrastructure classes',
+  })
+  const result = check(root, [], { body: { answers: { t0: { noul: 0.99 }, c0: { noul: 0.1 } } } })
+  assert.equal(result.status, 1, result.stderr)
+  assert.match(result.stdout, /HDL-001 \(MUST\): declare strict_types/)
+  assert.match(result.stdout, /~[0-9a-f]{8} \(MUST NOT\): Depend on infrastructure classes/)
+
+  const { data, report } = readRun(root)
+  assert.match(report, /\*\*HDL-001\*\* \(MUST\): declare strict_types/)
+  assert.match(report, /\(MUST NOT\): Depend on infrastructure classes/)
+  assert.equal(data.semanticViolations[0].message, 'MUST NOT: Depend on infrastructure classes')
 })
 
 test('--out writes the run document at a fixed path, and --json prints the same document', () => {
