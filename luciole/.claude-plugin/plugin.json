@@ -1,6 +1,6 @@
 {
   "name": "luciole",
-  "version": "2.0.0",
+  "version": "1.0.0",
   "description": "Turn a codebase's unwritten conventions into checks: onboarding derives measured constraint files from the project's own code, verification checks every change against them, and a retrospective keeps them honest. Language-agnostic.",
   "author": {
     "name": "Olivier Robert"
