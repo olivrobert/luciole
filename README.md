@@ -240,7 +240,7 @@ on disk, so you can `/clear` between calls to manage context on larger projects.
 |---|---|---|---|
 | 1 | `/luciole:onboard scope` | selects the file types and records the files in each scope | `scopes.json` |
 | 2 | `/luciole:onboard generate` | proposes rules per type, validates their format, and measures available probes across each scope | `candidates/{slug}.json` |
-| 3 | `/luciole:onboard review-scope [slug]` | a read-only reviewer judges one scope, an applier applies its findings | `findings/{slug}.json` |
+| 3 | `/luciole:onboard review-scope [slug]` | a read-only reviewer judges one scope, a script applies its findings as written | `findings/{slug}.json` |
 | 4 | `/luciole:onboard render` | renders the constraints and the tooling backlog, runs the gate, asks for your approval | `constraints/{slug}.md`, `approval.json` |
 | 5 | `/luciole:onboard skills` | after approval, one skill per scope, plus the mapping | `.claude/skills/` |
 

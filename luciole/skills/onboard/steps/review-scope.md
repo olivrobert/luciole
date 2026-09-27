@@ -17,6 +17,10 @@ This is the step that has the final word. A script has measured; no one has judg
 this command: judgment travels through disk, from one agent to another. You see
 counters, not rules.
 
+When `/luciole:onboard` routed here with "rule(s) not re-measured since their reprobe",
+the run stopped inside the loop: start at the `measure.mjs --slug` of "Loop 6 → 4", then
+continue with step 5.
+
 ## 5. Review
 
 ```
@@ -34,20 +38,17 @@ Read-only. It checks the `retenu` (kept) rules against the criteria, and resolve
 ## 6. Application
 
 ```
-Agent(subagent_type: "finding-applier", prompt:
-  slug: entity
-  candidates: ${QUALITY_ROOT}/onboard/candidates/entity.json
-  findings: ${QUALITY_ROOT}/onboard/findings/entity.json
-  refDir: ${CLAUDE_PLUGIN_ROOT}/skills/onboard/references
-)
+node ${CLAUDE_PLUGIN_ROOT}/skills/onboard/scripts/apply-findings.mjs --slug entity
 ```
 
-It edits, it doesn't judge. Its final line gives the number of `reprobe`.
+Applies every finding as written, or none. On a refusal (exit 1) nothing was written:
+relaunch the reviewer with the refusals it printed, then run this again. Its line gives
+the round, the number of `reprobe` and the `a-revoir` remaining.
 
 ## Loop 6 → 4
 
 A rule whose probe changed — `regex`, `sense`, or `gate` — no longer has a
-valid verdict. If the applier reports at least one `reprobe`:
+valid verdict. If `apply-findings` reports at least one `reprobe`:
 
 ```
 node ${CLAUDE_PLUGIN_ROOT}/skills/onboard/scripts/measure.mjs --slug entity
@@ -56,31 +57,25 @@ node ${CLAUDE_PLUGIN_ROOT}/skills/onboard/scripts/measure.mjs --slug entity
 `--slug` matters: it doesn't touch the JSON of other scopes, which another
 command might be correcting at the same time.
 
-Then loop back to step 5, for that slug only. **Two rounds are enough**; a rule
-that needs a third one gets discarded — tell the applier so on the third pass.
+Then loop back to step 5, for that slug only. `apply-findings` counts the rounds on
+disk and refuses a third `reprobe` on the same rule: the reviewer keeps or discards it.
 
 `measure.mjs` preserves every `measure.by: "review"`, and keeps `check: semantic` on a
 kept rule that already carries a measurement — a static candidate the review demoted
-stays demoted across passes. To deliberately re-measure such a rule, the applier first
-removes its `measure` field — which a `reprobe` does.
+stays demoted across passes. To deliberately re-measure such a rule, a `reprobe` removes
+its `measure` field first.
 
 ## Loop exit
 
-No rule carries `a-revoir` (to-review) anymore:
-
-```
-node ${CLAUDE_PLUGIN_ROOT}/skills/onboard/scripts/validate-candidates.mjs --phase post
-```
-
-This script is global: as long as other slugs remain to review, it will fail
-on them. That's expected — read only the lines for your slug, and treat it as
-blocking only on the last one.
+No rule carries `a-revoir` (to-review) anymore, and the JSON is well-formed.
+`measure.mjs` and the `/luciole:onboard` routing both check the shape: when either
+reports shape errors for this slug, relaunch the reviewer with them.
 
 ## Output
 
 One line per slug processed: findings, applied, discarded, loop rounds.
 
-If the applier reported rules **kept without a probe**, list them separately —
+If `apply-findings` reported rules **kept without a probe** (`no probe:`), list them separately —
 id and statement — with this note: "kept on manual review, no mechanical
 measurement behind it — to confirm, or to discard via `/luciole:onboard review-scope <slug>`".
 This is the only point in the pipeline where a rule enters the deliverable

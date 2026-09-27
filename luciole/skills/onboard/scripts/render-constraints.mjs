@@ -7,6 +7,7 @@
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { CANDIDATES_DIR, CONSTRAINTS_DIR, loadCandidates, rules, scopeLabel } from './lib/candidates.mjs'
+import { validateCandidates } from './lib/validate.mjs'
 
 const docs = loadCandidates()
 const broken = docs.filter((d) => d.error)
@@ -28,6 +29,15 @@ for (const { name, doc } of docs) {
 if (unresolved.length > 0) {
   console.log(`render-constraints: ${unresolved.length} rule(s) still a-revoir — step 5 must decide them, nothing was written`)
   for (const u of unresolved) console.log(`  ${u}`)
+  process.exit(1)
+}
+
+// Past the review, every other invariant must hold too: a kept rule without `check`, a
+// `grep` without STATIC verdict, a file outside the population would be rendered as-is.
+const shapeErrors = validateCandidates(docs, 'post')
+if (shapeErrors.length > 0) {
+  console.log(`render-constraints: ${shapeErrors.length} shape error(s), nothing was written`)
+  for (const e of shapeErrors) console.log(`  ${e}`)
   process.exit(1)
 }
 

@@ -20,6 +20,7 @@
 import { readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { runEngine } from './lib/engine.mjs'
 import { CANDIDATES_DIR, MEASURE_INPUT, MEASURES_FILE, loadCandidates, loadScopes, rules, saveCandidates } from './lib/candidates.mjs'
+import { isUnmeasured, validateCandidates } from './lib/validate.mjs'
 
 const argv = process.argv.slice(2)
 const opt = (name) => (argv.includes(name) ? argv[argv.indexOf(name) + 1] : null)
@@ -37,6 +38,16 @@ if (broken.length > 0) {
 }
 if (docs.length === 0) {
   console.log(onlySlug ? `NO candidates/${onlySlug}.json` : `NO .json in ${CANDIDATES_DIR}`)
+  process.exit(1)
+}
+
+// The shape check is a precondition, not a step to remember: a malformed file is refused
+// before anything is measured or written. A document no measurement touched yet is held to
+// the `pre` invariants, one coming back from the review to the `remeasure` ones.
+const shapeErrors = validateCandidates(docs, (doc) => (isUnmeasured(doc) ? 'pre' : 'remeasure'))
+if (shapeErrors.length > 0) {
+  console.log(`measure: ${shapeErrors.length} shape error(s), nothing was measured nor written`)
+  for (const e of shapeErrors) console.log(`  ${e}`)
   process.exit(1)
 }
 

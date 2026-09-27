@@ -1,6 +1,6 @@
 # Findings schema
 
-The JSON written by the `scope-reviewer` (step 5) and read by the `finding-applier` (step 6).
+The JSON written by the `scope-reviewer` (step 5) and applied by `apply-findings.mjs` (step 6).
 
 It exists for a precise reason: **to take judgment out of the orchestrator's context.**
 Before, the reviewer would return its prose and the orchestrator would edit the candidates
@@ -41,14 +41,15 @@ judgments, and nothing in the file says which one wins.
 
 ## `change` by `kind`
 
-| `kind` | `change` | What the applier does with it |
+| `kind` | `change` | What `apply-findings` writes |
 |---|---|---|
-| `fix` | `{ field, value }` | writes `value` into `field` |
+| `fix` | `{ field, value }` | writes `value` into `field` (a dotted path); `null` removes it |
 | `keep` | `{ measure: { matched, total, verdict } }` | sets `status: retenu`, `check: semantic`, and this `measure` with `by: "review"` |
-| `discard` | `{ reason, note }` | sets `status: ecarte`, the rule **stays** in `rules` |
+| `discard` | `{ reason, note, automatable? }` | sets `status: ecarte`, the rule **stays** in `rules`. `fixer` and `sans-sonde` need an `automatable` — on the rule or here |
 | `reprobe` | `{ probe: { regex, sense, gate? } }` | writes the probe and **removes** `measure` |
 
-`reason` belongs to the enum from `candidate-schema.md`. A `keep` without `measure` is
+A `fix` never targets `id`, `rule`, `status`, `measure` or `probe`: those belong to the
+other kinds, or to nobody. `reason` belongs to the enum from `candidate-schema.md`. A `keep` without `measure` is
 invalid: keeping a rule costs a ratio, and Gate 2 refuses an unmeasured rule.
 
 ### Demoting a static candidate
@@ -86,3 +87,8 @@ This change doesn't require re-measuring: the probe and its ratio haven't change
 - a `discard` carries a `reason` from the enum
 - a `reprobe` carries a `probe` whose `regex` compiles and does not contain the
   ` | ` sequence
+- a rule gets at most two `reprobe` over the whole review; the third is refused
+
+`apply-findings` checks all of them, plus the shape of the resulting candidates. One
+failure and nothing is written: the whole file goes back to the reviewer. Each applied
+file is archived as `findings/rounds/{slug}.{n}.json` — the round history.

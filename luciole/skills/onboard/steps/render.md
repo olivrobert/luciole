@@ -3,55 +3,27 @@
 Resolve `QUALITY_ROOT` from the environment, then `.luciole.local.env`,
 then `.luciole.env`, defaulting to `.ia/quality`. Every path below is relative to that root.
 
-The first three steps are deterministic. The last one doesn't re-judge the
-candidates one by one: it asks the human whether they accept the complete
-deliverable.
-
-## 7. Render the constraints
+## 7–9. Render and gate
 
 ```
-node ${CLAUDE_PLUGIN_ROOT}/skills/onboard/scripts/render-constraints.mjs
+node ${CLAUDE_PLUGIN_ROOT}/skills/onboard/scripts/render.mjs
 ```
 
-Generates `${QUALITY_ROOT}/code/constraints/{slug}.md` from each JSON, following
-`references/constraint-format.md`. The markdown is the deliverable; it is never
-hand-edited, it is regenerated. The file's title comes from `scope.label`, or
-the `slug` if none.
+Runs, in order, and stops at the first failure:
 
-The script refuses the entire run — without writing anything — if a rule
-remains in `a-revoir` (to-review): rendering it would mean deciding in place of step 5.
-In that case, go back to `/luciole:onboard review-scope <slug>` for the offending scope.
-
-## 8. Tooling backlog
-
-```
-node ${CLAUDE_PLUGIN_ROOT}/skills/onboard/scripts/render-backlog.mjs
-```
-
-Projects rules carrying an `automatable` field into
-`${QUALITY_ROOT}/code/lint-backlog.md`, following `references/lint-backlog-format.md`.
-The existing file isn't blindly overwritten: a line already marked `fait` (done) keeps
-its status.
-
-## 9. Gate
-
-```
-node ${CLAUDE_PLUGIN_ROOT}/skills/onboard/scripts/verify-onboard.mjs
-```
-
-Blocks as long as `constraint-lint --strict` doesn't exit 0, the measurement
-report is missing or empty, a semantic rule has no ratio, or an `a-revoir`
-(to-review) survives. An exit 2 from `constraint-lint` ("nothing verified") is not a success.
-
-Nothing is presented for validation until the gate is green.
+- `render-constraints.mjs` (7) — `${QUALITY_ROOT}/code/constraints/{slug}.md`, following
+  `references/constraint-format.md`. Regenerated, never hand-edited. Refuses the whole
+  run, writing nothing, on a surviving `a-revoir` or a shape error: go back to
+  `/luciole:onboard review-scope <slug>` for the offending scope.
+- `render-backlog.mjs` (8) — `${QUALITY_ROOT}/code/lint-backlog.md`, following
+  `references/lint-backlog-format.md`. A line marked `done` keeps its status.
+- `verify-onboard.mjs` (9) — the gate: `constraint-lint --strict` (an exit 2, "nothing
+  verified", is not a success), the measurement report, a ratio on every semantic rule.
+- `render-review.mjs` (10) — the summary for the human. It only runs once the gate is green.
 
 ## 10. Final human review
 
-```
-node ${CLAUDE_PLUGIN_ROOT}/skills/onboard/scripts/render-review.mjs
-```
-
-Present its output **in full** to the user: just a few lines — the number of
+Present the summary `render.mjs` ended with **in full** to the user: just a few lines — the number of
 rules kept per scope and the path to each constraints file to read. Never copy
 the rules into the conversation: the deliverable is the file.
 

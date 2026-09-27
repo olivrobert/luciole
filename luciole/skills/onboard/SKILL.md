@@ -48,7 +48,7 @@ On a project with several scopes of 40+ files, do not use `all`: the review step
 ## What protects the orchestrator's context
 
 - **The orchestrator never reads a candidates JSON.** Agents return a single line; state lives on disk.
-- **Judgment travels through files.** `scope-reviewer` writes findings, `finding-applier` reads them. No review prose comes back up.
+- **Judgment travels through files.** `scope-reviewer` writes findings, `apply-findings.mjs` applies them. No review prose comes back up.
 
 Corollary: every step is resumable, and what step 1 wrote is never rediscovered — two discoveries of the same scope don't yield the same `sample`.
 
@@ -59,11 +59,11 @@ The population is `glob - exclude`, recomputed by the scripts and never enumerat
 | Actor | Does | Does not |
 |---|---|---|
 | `candidate-generator` | reads `sample`, writes the candidates | set `check` or `measure` |
-| `measure.mjs` → `measure-candidates` | classifies by ratio | discard anything |
+| `measure.mjs` → `measure-candidates` | refuses a malformed JSON, classifies by ratio | discard anything |
 | `scope-reviewer` | judges, writes the findings | write into the candidates |
-| `finding-applier` | applies the findings | judge, delete a rule |
-| `verify-onboard.mjs` → `constraint-lint` | blocks | fix |
-| `render-review.mjs` → `approval.mjs` | points to the constraints to re-read, then attests the validated hash | modify any rule |
+| `apply-findings.mjs` | applies the findings as written, or refuses them all | judge, adapt a finding, delete a rule |
+| `render.mjs` → `verify-onboard.mjs` → `constraint-lint` | renders, then blocks until the gate is green | fix |
+| `approval.mjs` | attests the hash the human validated | modify any rule |
 
 ## The run invariants
 

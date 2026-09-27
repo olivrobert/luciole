@@ -24,6 +24,9 @@ test('onboard stays an orchestrator and loads its details on demand', () => {
     'references/constraint-format.md',
     'references/lint-backlog-format.md',
     'scripts/verify-onboard.mjs',
+    'scripts/render.mjs',
+    'scripts/apply-findings.mjs',
+    'scripts/lib/validate.mjs',
     'scripts/render-review.mjs',
     'scripts/approval.mjs',
     'scripts/next-step.mjs',
@@ -31,7 +34,7 @@ test('onboard stays an orchestrator and loads its details on demand', () => {
     assert.ok(existsSync(join(ONBOARD, resource)), `missing: ${resource}`)
   }
 
-  for (const agent of ['candidate-generator.md', 'scope-reviewer.md', 'finding-applier.md']) {
+  for (const agent of ['candidate-generator.md', 'scope-reviewer.md']) {
     assert.ok(existsSync(join(PLUGIN, 'agents', agent)), `missing: agents/${agent}`)
   }
 

@@ -26,30 +26,58 @@ function write(root, path, content) {
 
 const next = (root) => run(root, 'next-step.mjs').stdout.trim()
 
-const measured = { id: 'ENT-001', status: 'retenu', measure: { total: 4, matched: 4, verdict: 'STATIC' } }
+// Well-formed candidates: the routing checks the shape of a reviewed scope.
+const FILES = ['src/A1.php', 'src/A2.php']
+const measuredRule = (id) => ({
+  id, status: 'retenu', strength: 'MUST', rule: 'Classes are final',
+  probe: { regex: '^final class', sense: 'present' },
+  trigger: 'class declaration', anchor: 'final class', rationale: 'coherence',
+  evidence: FILES.map((file) => ({ file })), counterExamples: [],
+  check: 'grep', measure: { total: 2, matched: 2, verdict: 'STATIC' },
+})
+const candidates = (slug, prefix, rules) => ({
+  scope: { slug, prefix, glob: 'src/*.php', marker: 'final class', population: FILES.length, sample: FILES },
+  rules,
+})
+const entity = (...rules) => candidates('entity', 'ENT', rules)
+const measured = measuredRule('ENT-001')
 
 // `/luciole:onboard` without an argument trusts this script to resume the run: each state the
 // steps leave on disk must lead to the step that follows it, never to one already done.
 test('next-step walks the onboarding in order, from an empty project to done', () => {
   const root = mkdtempSync(join(tmpdir(), 'next-step-'))
+  for (const file of FILES) write(root, file, 'final class A {}\n')
   assert.match(next(root), /^next: scope — /)
 
   write(root, `${ONBOARD}/scopes.json`, { scopes: [{ slug: 'entity' }, { slug: 'handler' }] })
-  assert.match(next(root), /^next: generate — not generated or not measured: entity, handler$/)
+  assert.match(next(root), /^next: generate — not generated: entity, handler$/)
 
   // A candidates file whose live rules are not measured yet: step 2 stopped before step 4.
-  write(root, `${ONBOARD}/candidates/entity.json`, { rules: [{ id: 'ENT-001', status: 'retenu' }] })
-  write(root, `${ONBOARD}/candidates/handler.json`, { rules: [measured] })
-  assert.match(next(root), /^next: generate — not generated or not measured: entity$/)
+  // It only lacks its measurement — the generator must not be relaunched over it.
+  write(root, `${ONBOARD}/candidates/entity.json`, entity({ id: 'ENT-001', status: 'retenu' }))
+  assert.match(next(root), /^next: generate — not generated: handler; not measured: entity$/)
 
-  write(root, `${ONBOARD}/candidates/entity.json`, { rules: [measured, { id: 'ENT-002', status: 'a-revoir', measure: {} }] })
+  write(root, `${ONBOARD}/candidates/handler.json`, candidates('handler', 'HDL', [measuredRule('HDL-001')]))
+  assert.match(next(root), /^next: generate — not measured: entity$/)
+
+  write(root, `${ONBOARD}/candidates/entity.json`, entity(measured, { id: 'ENT-002', status: 'a-revoir', measure: {} }))
   assert.match(next(root), /^next: review-scope entity — no findings yet$/)
 
-  // Findings written, but the applier left a rule to review: the loop is not over.
+  // Findings applied, but a rule is still to review: the loop is not over.
   write(root, `${ONBOARD}/findings/entity.json`, {})
   assert.match(next(root), /^next: review-scope entity — 1 rule\(s\) still a-revoir$/)
 
-  write(root, `${ONBOARD}/candidates/entity.json`, { rules: [measured] })
+  // A `reprobe` removed the measure, and the run stopped before `measure.mjs --slug`: the
+  // review loop resumes with the re-measurement — never a generation over the reviewed file.
+  const { measure, ...reprobed } = measuredRule('ENT-002')
+  write(root, `${ONBOARD}/candidates/entity.json`, entity(measured, reprobed))
+  assert.match(next(root), /^next: review-scope entity — 1 rule\(s\) not re-measured since their reprobe$/)
+
+  // No rule left to review, but the JSON was broken by hand: the loop is not over either.
+  write(root, `${ONBOARD}/candidates/entity.json`, entity({ ...measured, counterExamples: [{ file: FILES[0], note: 'x' }] }))
+  assert.match(next(root), /^next: review-scope entity — 1 shape error\(s\), first: entity\.json :: ENT-001 — check grep with non-empty counterExamples$/)
+
+  write(root, `${ONBOARD}/candidates/entity.json`, entity(measured))
   assert.match(next(root), /^next: review-scope handler — /)
 
   write(root, `${ONBOARD}/findings/handler.json`, {})

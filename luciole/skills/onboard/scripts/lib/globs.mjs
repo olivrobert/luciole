@@ -1,5 +1,5 @@
 // Glob expansion and repository walk, shared by the scripts that must establish a scope:
-// `validate-scopes` (step 1) and `validate-candidates` (steps 3, 6bis).
+// `validate-scopes` (step 1) and `lib/validate.mjs` (measure, render, validate-candidates).
 //
 // Same exhaustive grammar as `luciole` SPEC §2. The two scripts remain
 // independent: they must detect a wrong scope before an agent starts working on it.

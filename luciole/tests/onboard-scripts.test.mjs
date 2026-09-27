@@ -262,6 +262,189 @@ test('measure passes on scope.exclude and does not count the excluded files', ()
 
 // -------------------------------------------------------------- render-constraints
 
+// The shape check is a precondition of its consumers, not a step the orchestrator has to
+// remember: a malformed file never reaches the measurement nor the rendering.
+test('measure refuses a malformed candidates file before measuring, and writes nothing', () => {
+  const root = project({ rules: [{ ...GATED, evidence: [{ file: 'src/Domain/A1.php' }] }] })
+  const before = readFileSync(join(root, CANDIDATES, 'entity.json'), 'utf8')
+  const r = run(root, 'measure.mjs', ['--min-population', '2'])
+  assert.equal(r.status, 1, r.stdout)
+  assert.match(r.stdout, /shape error.*nothing was measured nor written/)
+  assert.match(r.stdout, /ENT-001 — evidence < 2 distinct files/)
+  assert.equal(readFileSync(join(root, CANDIDATES, 'entity.json'), 'utf8'), before)
+  assert.equal(existsSync(join(root, '.ia/quality/onboard/measures.json')), false)
+})
+
+test('measure accepts a re-measurement of rules whose measure a reprobe removed', () => {
+  const root = project({ rules: [GATED, UNGATED] })
+  run(root, 'measure.mjs', ['--min-population', '2'])
+
+  // What step 6 does on a `reprobe`: new probe, `measure` removed — on a kept rule as on an a-revoir.
+  const path = join(root, CANDIDATES, 'entity.json')
+  const doc = JSON.parse(readFileSync(path, 'utf8'))
+  for (const r of doc.rules) delete r.measure
+  doc.rules[1].probe.gate = { regex: 'ManyToMany\\(inversedBy:', sense: 'present' }
+  writeFileSync(path, JSON.stringify(doc, null, 2))
+
+  const r = run(root, 'measure.mjs', ['--min-population', '2'])
+  assert.equal(r.status, 0, r.stdout)
+  const m = readRules(root)
+  assert.equal(m['ENT-001'].measure.verdict, 'STATIC')
+  assert.equal(m['ENT-002'].status, 'retenu')
+})
+
+test('measure refuses a re-measurement input that breaks a measured invariant', () => {
+  const root = project({ rules: [GATED] })
+  run(root, 'measure.mjs', ['--min-population', '2'])
+  const path = join(root, CANDIDATES, 'entity.json')
+  const doc = JSON.parse(readFileSync(path, 'utf8'))
+  doc.rules[0].counterExamples = [{ file: 'src/Domain/B1.php', note: 'added by hand' }]
+  writeFileSync(path, JSON.stringify(doc, null, 2))
+
+  const r = run(root, 'measure.mjs', ['--min-population', '2'])
+  assert.equal(r.status, 1, r.stdout)
+  assert.match(r.stdout, /check grep with non-empty counterExamples/)
+})
+
+test('render-constraints refuses a shape error past the review, and writes nothing', () => {
+  const root = project({ rules: [GATED] })
+  run(root, 'measure.mjs', ['--min-population', '2'])
+  const path = join(root, CANDIDATES, 'entity.json')
+  const doc = JSON.parse(readFileSync(path, 'utf8'))
+  delete doc.rules[0].check
+  writeFileSync(path, JSON.stringify(doc, null, 2))
+
+  const r = run(root, 'render-constraints.mjs')
+  assert.equal(r.status, 1, r.stdout)
+  assert.match(r.stdout, /shape error.*nothing was written/)
+  assert.equal(existsSync(join(root, '.ia/quality/code/constraints/entity.md')), false)
+})
+
+test('render chains constraints, backlog, gate and review, and stops at the first failure', () => {
+  const root = project({ rules: [GATED, UNGATED] })
+  run(root, 'measure.mjs', ['--min-population', '2'])
+  const stopped = run(root, 'render.mjs')
+  assert.equal(stopped.status, 1, stopped.stdout)
+  assert.match(stopped.stdout, /stopped at render-constraints\.mjs/)
+  assert.doesNotMatch(stopped.stdout, /render-review|verify-onboard:/)
+
+  const path = join(root, CANDIDATES, 'entity.json')
+  const doc = JSON.parse(readFileSync(path, 'utf8'))
+  Object.assign(doc.rules[1], { status: 'ecarte', reason: 'incoherent', note: 'duplicate of ENT-001 without its gate' })
+  writeFileSync(path, JSON.stringify(doc, null, 2))
+
+  const r = run(root, 'render.mjs')
+  assert.equal(r.status, 0, r.stdout + r.stderr)
+  assert.ok(existsSync(join(root, '.ia/quality/code/constraints/entity.md')))
+  assert.match(r.stdout, /verify-onboard: .*gate OK/)
+  assert.match(r.stdout, /constraints\/entity\.md/)
+})
+
+// ------------------------------------------------------------ apply-findings
+
+const FINDINGS = '.ia/quality/onboard/findings'
+
+// GATED comes out retenu/grep, UNGATED a-revoir: the state a review starts from.
+function reviewed() {
+  const root = project({ rules: [GATED, UNGATED] })
+  run(root, 'measure.mjs', ['--min-population', '2'])
+  return root
+}
+
+function findings(root, list) {
+  mkdirSync(join(root, FINDINGS), { recursive: true })
+  writeFileSync(join(root, FINDINGS, 'entity.json'), JSON.stringify({ slug: 'entity', findings: list }, null, 2))
+}
+
+const REPROBE = {
+  id: 'ENT-002', kind: 'reprobe', why: 'the trigger was not isolated',
+  change: { probe: { regex: 'JoinTable\\(name:', sense: 'present', gate: { regex: 'ManyToMany\\(inversedBy:', sense: 'present' } } },
+}
+
+test('apply-findings applies each kind as written and archives the round', () => {
+  const root = reviewed()
+  findings(root, [
+    { id: 'ENT-001', kind: 'fix', why: 'the probe does not decide the statement', change: { field: 'check', value: 'semantic' } },
+    REPROBE,
+  ])
+  const r = run(root, 'apply-findings.mjs', ['--slug', 'entity'])
+  assert.equal(r.status, 0, r.stdout)
+  assert.match(r.stdout, /^apply-findings \(round 1\): 2 applied, 1 reprobe, 1 a-revoir remaining$/m)
+  const m = readRules(root)
+  assert.equal(m['ENT-001'].check, 'semantic')
+  assert.equal(m['ENT-001'].measure.verdict, 'STATIC', 'a demotion keeps the measurement')
+  assert.equal(m['ENT-002'].measure, undefined, 'a reprobe drops the measurement')
+  assert.ok(existsSync(join(root, FINDINGS, 'rounds', 'entity.1.json')))
+
+  // The loop resumes: the re-measurement accepts what the script wrote.
+  const again = run(root, 'measure.mjs', ['--slug', 'entity', '--min-population', '2'])
+  assert.equal(again.status, 0, again.stdout)
+  assert.equal(readRules(root)['ENT-002'].status, 'retenu')
+})
+
+test('apply-findings keeps and discards, and reports a rule kept without a probe', () => {
+  const root = reviewed()
+  const path = join(root, CANDIDATES, 'entity.json')
+  const doc = JSON.parse(readFileSync(path, 'utf8'))
+  delete doc.rules[1].probe
+  writeFileSync(path, JSON.stringify(doc, null, 2))
+  findings(root, [
+    { id: 'ENT-001', kind: 'discard', why: 'duplicate', change: { reason: 'incoherent', note: 'same as ENT-002' } },
+    { id: 'ENT-002', kind: 'keep', why: 'counted by hand on 4 files', change: { measure: { matched: 2, total: 2, verdict: 'SEMANTIC' } } },
+  ])
+  const r = run(root, 'apply-findings.mjs', ['--slug', 'entity'])
+  assert.equal(r.status, 0, r.stdout)
+  assert.match(r.stdout, /no probe: ENT-002\n  ENT-002: The owning side/)
+  const m = readRules(root)
+  assert.deepEqual([m['ENT-001'].status, m['ENT-001'].reason], ['ecarte', 'incoherent'])
+  assert.deepEqual(m['ENT-002'].measure, { matched: 2, total: 2, verdict: 'SEMANTIC', by: 'review' })
+  assert.equal(m['ENT-002'].check, 'semantic')
+})
+
+// Observed on a real run: a `discard sans-sonde` without `automatable` came out as
+// `incoherent`, the reviewer's choice silently replaced. The script refuses instead.
+test('apply-findings refuses a finding it cannot apply as written, and writes nothing', () => {
+  const root = reviewed()
+  const before = readFileSync(join(root, CANDIDATES, 'entity.json'), 'utf8')
+  findings(root, [
+    { id: 'ENT-001', kind: 'fix', why: 'clearer', change: { field: 'rule', value: 'Join tables are named' } },
+    { id: 'ENT-002', kind: 'discard', why: 'no regex can say it', change: { reason: 'sans-sonde', note: 'a tool covers it' } },
+  ])
+  const r = run(root, 'apply-findings.mjs', ['--slug', 'entity'])
+  assert.equal(r.status, 1, r.stdout)
+  assert.match(r.stdout, /nothing was written — send them back to the reviewer/)
+  assert.match(r.stdout, /ENT-001 — fix on rule refused/)
+  assert.match(r.stdout, /ENT-002 — reason sans-sonde without automatable\.tool/)
+  assert.equal(readFileSync(join(root, CANDIDATES, 'entity.json'), 'utf8'), before)
+  assert.equal(existsSync(join(root, FINDINGS, 'rounds')), false)
+})
+
+test('apply-findings refuses to leave an a-revoir unresolved, and a new probe passed as a fix', () => {
+  const root = reviewed()
+  findings(root, [{ id: 'ENT-001', kind: 'fix', why: 'gate', change: { field: 'probe.gate', value: { regex: 'x', sense: 'present' } } }])
+  const r = run(root, 'apply-findings.mjs', ['--slug', 'entity'])
+  assert.equal(r.status, 1, r.stdout)
+  assert.match(r.stdout, /ENT-001 — fix on probe\.gate refused — a new probe is a reprobe/)
+  assert.match(r.stdout, /ENT-002 — a-revoir without a finding/)
+})
+
+test('apply-findings counts rounds on disk: same findings twice is a no-op, a third reprobe is refused', () => {
+  const root = reviewed()
+  findings(root, [REPROBE])
+  assert.equal(run(root, 'apply-findings.mjs', ['--slug', 'entity']).status, 0)
+  const noop = run(root, 'apply-findings.mjs', ['--slug', 'entity'])
+  assert.equal(noop.status, 0, noop.stdout)
+  assert.match(noop.stdout, /already applied \(round 1\)/)
+
+  findings(root, [{ ...REPROBE, why: 'second try' }])
+  assert.equal(run(root, 'apply-findings.mjs', ['--slug', 'entity']).status, 0)
+  findings(root, [{ ...REPROBE, why: 'third try' }])
+  const third = run(root, 'apply-findings.mjs', ['--slug', 'entity'])
+  assert.equal(third.status, 1, third.stdout)
+  assert.match(third.stdout, /round 3.*nothing was written/)
+  assert.match(third.stdout, /ENT-002 — reprobe #3 refused/)
+})
+
 test('render-constraints refuses to render while an a-revoir survives, and writes nothing', () => {
   const root = project({ rules: [GATED, UNGATED] })
   run(root, 'measure.mjs', ['--min-population', '2'])
@@ -287,6 +470,7 @@ test('render-constraints removes the stale {slug}.md once the last rule of a sco
   const doc = JSON.parse(readFileSync(path, 'utf8'))
   doc.rules[0].status = 'ecarte'
   doc.rules[0].reason = 'hors-perimetre'
+  doc.rules[0].note = 'outside the scope once reviewed'
   writeFileSync(path, JSON.stringify(doc, null, 2))
 
   const r = run(root, 'render-constraints.mjs')
