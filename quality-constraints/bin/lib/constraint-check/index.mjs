@@ -9,13 +9,13 @@
 // two Noul questions per rule, evaluated in parallel.
 
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import projectPaths from '../../../lib/project-paths.js'
 
 import { buildQuestions, readAnswers } from './questions.mjs'
-import { renderReport, renderSummaryLine } from './report.mjs'
+import { finalize, FORMAT, renderReport, renderSummaryLine, renderVerdict, writeData, writeRun } from './report.mjs'
 import { isBlocking, parseSemanticRule } from './rules.mjs'
 import { mapWithConcurrency, TypeSafeClient, TypeSafeError } from './typesafe.mjs'
 
@@ -27,8 +27,12 @@ constraint-check [files… | directories…] [options]
 With no argument, the scope is the current git diff.
 
 Options
-  --ticket=<name>           Identifier carried into the measurement block.
+  --ticket=<name>           Identifier carried into the run document.
   --reports=<dir>           Report folder (default: .ia/quality/code/reports/constraints).
+                            Each run writes <run_ts>-constraints.json (the run document,
+                            read by rule-stats) and <run_ts>-constraints.md (rendered from it).
+  --out=<path>              Also write the run document to this exact path — a fixed name
+                            a gate can read without knowing the run_ts.
   --matcher=<path>          Path to match-constraints.js (default: bundled matcher).
   --model=<name>            System One model (default: jev-latest).
   --threshold=<0-1>         Violation threshold (default: 0.70).
@@ -39,8 +43,8 @@ Options
                             make the check incomplete, never silently truncated.
   --semantic-only           Drop the static (grep) rules, keep only the TypeSafe stage.
   --respect-non-blocking    Downgrade MUST rules flagged "non-blocking" to warnings.
-  --json                    Emit only the run's JSON on stdout.
-  --stdout                  Write the full report to stdout instead of a file.
+  --json                    Emit only the run document on stdout.
+  --stdout                  Print the markdown report instead of writing the report folder.
   --dry-run                 Do not call the API: print the requests that would be sent.
   -h, --help                This help.
 
@@ -69,8 +73,9 @@ function run() {
     main().catch((error) => {
         const message = error instanceof TypeSafeError ? error.message : (error.stack ?? String(error))
         process.stderr.write(`constraint-check: ${message}\n`)
-        const failed = { counts: { violations: 0, warnings: 0, errors: 1 }, errors: [{ file: null, message }] }
-        process.stdout.write(process.argv.includes('--json') ? `${JSON.stringify(failed)}\n` : renderVerdict(failed))
+        const verdict = { success: false, violations: 0, warnings: 0, errors: 1 }
+        const failed = { format: FORMAT, verdict, errors: [{ file: null, message }] }
+        process.stdout.write(process.argv.includes('--json') ? `${JSON.stringify(failed)}\n` : renderVerdict(verdict))
         process.exit(2)
     })
 }
@@ -86,9 +91,11 @@ async function main() {
     const matched = runMatcher(options)
     options.projectRoot = matched.project_root ?? process.cwd()
     if (matched.error === 'no_files') {
+        // Nothing measured, so no report — but a gate waiting on `--out` still gets its verdict.
+        const doc = finalize({ format: FORMAT, run_ts: timestamp(), ticket: options.ticket, engine: engineOf(options), rules: [] })
+        if (options.out) writeData(doc, resolve(process.cwd(), options.out))
         process.stdout.write(
-            '## Constraints Check: PASSED ✅\nNo files to check.\n\n' +
-            '```json:verdict\n{"success":true,"violations":0,"warnings":0}\n```\n',
+            options.json ? `${JSON.stringify(doc)}\n` : `## Constraints Check: PASSED ✅\nNo files to check.\n\n${renderVerdict(doc.verdict)}`,
         )
 
         return
@@ -106,11 +113,11 @@ async function main() {
     if (hasRequests) loadApiKey(options.projectRoot)
     const client = hasRequests ? new TypeSafeClient({ model: options.model }) : null
     const findings = await verify(jobs, client, options)
-    const run = assemble(matched, jobs, findings, options)
+    const doc = assemble(matched, jobs, findings, options)
 
-    emit(run, options)
+    emit(doc, options)
 
-    process.exit(run.counts.errors > 0 ? 2 : run.counts.violations > 0 ? 1 : 0)
+    process.exit(doc.counts.errors > 0 ? 2 : doc.counts.violations > 0 ? 1 : 0)
 }
 
 // ----------------------------------------------------------------------------- arguments
@@ -121,6 +128,7 @@ function parseArgs(argv) {
         targets: [],
         ticket: null,
         reports: null,
+        out: null,
         matcher: null,
         semanticOnly: false,
         respectNonBlocking: false,
@@ -142,6 +150,9 @@ function parseArgs(argv) {
                 break
             case '--reports':
                 options.reports = value
+                break
+            case '--out':
+                options.out = value
                 break
             case '--matcher':
                 options.matcher = value
@@ -400,24 +411,31 @@ function assemble(matched, jobs, findings, options) {
     )
     const advisories = Object.values(matched.advisory ?? {}).flat()
 
-    return {
+    return finalize({
+        format: FORMAT,
+        run_ts: matched.run_ts,
+        ticket: options.ticket,
+        branch: matched.branch,
+        engine: engineOf(options),
+        counts: { files: files.size, staticRules, semanticRules },
         staticViolations,
-        staticWarnings,
         semanticViolations,
         semanticWarnings,
+        staticWarnings,
         advisories,
         errors,
-        counts: {
-            files: files.size,
-            staticRules,
-            semanticRules,
-            violations: staticViolations.length + semanticViolations.length,
-            warnings: staticWarnings.length + semanticWarnings.length + advisories.length,
-            errors: errors.length,
-        },
         summary: buildSummary(matched, tally),
-        measurement: buildMeasurement(matched, findings, jobs, options),
-    }
+        rules: buildMeasurement(matched, findings, jobs, options),
+    })
+}
+
+function engineOf(options) {
+    return `typesafe:${options.model}`
+}
+
+// Same shape as the matcher's `run_ts`, for the one path that never reaches it.
+function timestamp() {
+    return new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15)
 }
 
 function collectStatic(matched) {
@@ -433,7 +451,7 @@ function collectStatic(matched) {
                 message: violation.message,
                 line: violation.line ?? null,
                 lines: violation.lines ?? null,
-                linesTotal: violation.lines_total ?? null,
+                lines_total: violation.lines_total ?? null,
             })
         }
     }
@@ -461,7 +479,7 @@ function buildSummary(matched, tally) {
     })
 }
 
-// The measurement block is written on EVERY run, passing or failing: it is the only source
+// The `rules` array of the run document: one row per rule, clean or not — the only source
 // that lets rule-stats say "this rule found nothing for N runs".
 function buildMeasurement(matched, findings, jobs, options) {
     const perRule = new Map()
@@ -503,51 +521,34 @@ function buildMeasurement(matched, findings, jobs, options) {
             return { ...row, verdict: 'pass', hits: 0 }
         })
 
-    return {
-        run_ts: matched.run_ts,
-        ticket: options.ticket,
-        branch: matched.branch,
-        engine: `typesafe:${options.model}`,
-        rules,
-    }
+    return rules
 }
 
 // -------------------------------------------------------------------------------- output
 
-function emit(run, options) {
+function emit(doc, options) {
+    if (options.out) writeData(doc, resolve(process.cwd(), options.out))
+
     if (options.json) {
-        process.stdout.write(`${JSON.stringify(run)}\n`)
+        process.stdout.write(`${JSON.stringify(doc)}\n`)
 
         return
     }
 
-    const report = renderReport(run)
-
-    for (const error of run.errors) {
+    for (const error of doc.errors) {
         process.stderr.write(`ERROR ${error.file}: ${error.message}\n`)
     }
 
     const folder = resolveReportsFolder(options)
     if (options.stdout || folder === null) {
-        process.stdout.write(`${report}\n${renderVerdict(run)}`)
+        process.stdout.write(`${renderReport(doc)}\n${renderVerdict(doc.verdict)}`)
 
         return
     }
 
-    mkdirSync(folder, { recursive: true })
-    const path = join(folder, `${run.measurement.run_ts}-constraints.md`)
-    writeFileSync(path, report, 'utf8')
+    const paths = writeRun(doc, join(folder, `${doc.run_ts}-constraints.json`))
 
-    process.stdout.write(`${renderSummaryLine(run, path)}\n${renderVerdict(run)}`)
-}
-
-function renderVerdict(run) {
-    return `\`\`\`json:verdict\n${JSON.stringify({
-        success: run.counts.violations === 0 && !(run.counts.errors > 0),
-        violations: run.counts.violations,
-        warnings: run.counts.warnings,
-        ...(run.counts.errors > 0 ? { errors: run.counts.errors } : {}),
-    })}\n\`\`\`\n`
+    process.stdout.write(`${renderSummaryLine(doc, paths)}\n${renderVerdict(doc.verdict)}`)
 }
 
 function resolveReportsFolder(options) {
@@ -561,4 +562,4 @@ function resolveReportsFolder(options) {
     return null
 }
 
-export { assemble, buildJobs, loadApiKey, parseArgs, renderVerdict, run }
+export { assemble, buildJobs, loadApiKey, parseArgs, run }

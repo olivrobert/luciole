@@ -6,7 +6,8 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { loadApiKey, parseArgs, renderVerdict } from '../bin/lib/constraint-check/index.mjs'
+import { loadApiKey, parseArgs } from '../bin/lib/constraint-check/index.mjs'
+import { FORMAT, renderVerdict } from '../bin/lib/constraint-check/report.mjs'
 import { buildQuestions, readAnswers } from '../bin/lib/constraint-check/questions.mjs'
 import { parseSemanticRule } from '../bin/lib/constraint-check/rules.mjs'
 import projectPaths from '../lib/project-paths.js'
@@ -14,6 +15,7 @@ import ruleStats from '../bin/lib/rule-stats.js'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const CLI = join(ROOT, 'bin', 'constraint-check')
+const RENDER = join(ROOT, 'bin', 'constraint-report')
 
 test('QUALITY_ROOT resolution prefers the process environment over .luciole.env', () => {
   const root = mkdtempSync(join(tmpdir(), 'quality-root-'))
@@ -56,7 +58,7 @@ test('a lone .luciole.local.env is enough, and falls back to defaults for missin
 })
 
 test('JEV output uses the same verdict block as agent verification', () => {
-  const block = renderVerdict({ counts: { violations: 2, warnings: 1 } })
+  const block = renderVerdict({ success: false, violations: 2, warnings: 1 })
   assert.equal(block, '```json:verdict\n{"success":false,"violations":2,"warnings":1}\n```\n')
 })
 
@@ -202,6 +204,18 @@ globalThis.fetch = async (url, options) => {
   })
 }
 
+// The two artifacts of the single run written under the default report folder.
+function readRun(root) {
+  const folder = join(root, '.quality-artifacts/code/reports/constraints')
+  const names = readdirSync(folder).sort()
+  assert.equal(names.length, 2, names.join(', '))
+  const [dataName, reportName] = names
+  assert.match(dataName, /^\d{8}-\d{6}-constraints\.json$/)
+  assert.equal(reportName, dataName.replace(/\.json$/, '.md'))
+  const dataPath = join(folder, dataName)
+  return { data: JSON.parse(readFileSync(dataPath, 'utf8')), report: readFileSync(join(folder, reportName), 'utf8'), dataPath }
+}
+
 function verdict(stdout) {
   return JSON.parse(stdout.match(/```json:verdict\n([^\n]+)/)[1])
 }
@@ -233,13 +247,11 @@ for (const [name, response] of [
     assert.equal(result.status, 2, result.stderr)
     assert.deepEqual(verdict(result.stdout), { success: false, violations: 0, warnings: 0, errors: 1 })
     assert.match(result.stdout, /INCOMPLETE/)
-    const folder = join(root, '.quality-artifacts/code/reports/constraints')
-    const report = readFileSync(join(folder, readdirSync(folder)[0]), 'utf8')
+    const { report, data, dataPath } = readRun(root)
     assert.match(report, /### Verification errors/)
-    const measurement = JSON.parse(report.match(/```json:constraints-run\n([^\n]+)/)[1])
-    assert.equal(measurement.rules[0].verdict, null)
-    assert.match(measurement.rules[0].reason, /incomplete/)
-    const parsed = ruleStats.parseReport('report.md', report)
+    assert.equal(data.rules[0].verdict, null)
+    assert.match(data.rules[0].reason, /incomplete/)
+    const parsed = ruleStats.parseReport(dataPath, readFileSync(dataPath, 'utf8'))
     assert.equal(parsed.rows.length, 0, 'unverified files must not count as clean observations')
     assert.ok(parsed.problems.length > 0)
   })
@@ -261,7 +273,7 @@ test('a partial API failure cannot attest a clean population', () => {
   assert.equal(result.status, 2, result.stderr)
   const run = JSON.parse(result.stdout)
   assert.equal(run.counts.errors, 1)
-  assert.equal(run.measurement.rules[0].verdict, null)
+  assert.equal(run.rules[0].verdict, null)
 })
 
 test('static SHOULD findings warn, while static MUST findings block', () => {
@@ -314,7 +326,7 @@ test('subdirectory invocation resolves source, API key and default reports from 
   const request = JSON.parse(readFileSync(join(root, 'requests.jsonl'), 'utf8').trim())
   assert.equal(request.body.state.file_content, readFileSync(join(root, 'src/Handler.php'), 'utf8'))
   assert.equal(request.headers.Authorization, 'Bearer fixture-key')
-  assert.equal(readdirSync(join(root, '.quality-artifacts/code/reports/constraints')).length, 1)
+  assert.equal(readdirSync(join(root, '.quality-artifacts/code/reports/constraints')).length, 2)
 })
 
 test('missing credentials produce an explicit unsuccessful verdict', () => {
@@ -329,4 +341,106 @@ test('invalid numeric options cannot bypass semantic verification', () => {
     '--max-chars', '--threshold=2', '--trigger-threshold=-1', '--uncertain=0.9']) {
     assert.throws(() => parseArgs([flag]), undefined, flag)
   }
+})
+
+test('a run writes the JSON document and a markdown report free of data blocks', () => {
+  const root = checkProject({ staticRules: 'HDL-001 | present | strict_types | MUST: declare strict_types' })
+  const result = check(root, ['--ticket=PROJ-1'], { body: { answers: { t0: { noul: 0.99 }, c0: { noul: 0.1 } } } })
+  assert.equal(result.status, 1, result.stderr)
+  assert.match(result.stdout, /Full report: .*-constraints\.md/)
+  assert.match(result.stdout, /Run data: .*-constraints\.json/)
+
+  const { data, report } = readRun(root)
+  assert.equal(data.format, FORMAT)
+  assert.equal(data.ticket, 'PROJ-1')
+  assert.deepEqual(data.verdict, { success: false, violations: 2, warnings: 0 })
+  assert.equal(data.staticViolations[0].id, 'HDL-001')
+  assert.equal(data.semanticViolations[0].violation.toFixed(2), '0.90')
+  assert.ok(data.rules.length >= 2)
+  assert.ok(!report.includes('```'), 'the markdown report must carry no fenced data')
+  assert.match(report, /Ticket: PROJ-1/)
+  assert.match(report, /### Static Violations \(grep\)/)
+  assert.match(report, /### Semantic Violations\n/)
+})
+
+test('--out writes the run document at a fixed path, and --json prints the same document', () => {
+  const root = checkProject()
+  const result = check(root, ['--out=gate/constraints.json'])
+  assert.equal(result.status, 0, result.stderr)
+  const gate = JSON.parse(readFileSync(join(root, 'gate/constraints.json'), 'utf8'))
+  assert.deepEqual(gate, readRun(root).data)
+  assert.equal(gate.verdict.success, true)
+
+  const json = JSON.parse(check(root, ['--json']).stdout)
+  assert.deepEqual(Object.keys(json), Object.keys(gate))
+})
+
+test('--out still receives a verdict when there is nothing to check', () => {
+  const root = checkProject()
+  const matcher = join(root, 'no-files-matcher.js')
+  writeFileSync(matcher, 'process.stdout.write(\'{"error":"no_files","constraints":{}}\\n\')\n')
+  const result = spawnSync(process.execPath, [CLI, `--matcher=${matcher}`, '--out=gate.json'], {
+    cwd: root, encoding: 'utf8', env: { ...process.env, QUALITY_ROOT: '', TYPESAFE_API_KEY: '' },
+  })
+  assert.equal(result.status, 0, result.stderr)
+  assert.match(result.stdout, /No files to check/)
+  const gate = JSON.parse(readFileSync(join(root, 'gate.json'), 'utf8'))
+  assert.deepEqual(gate.verdict, { success: true, violations: 0, warnings: 0 })
+})
+
+// ---------------------------------------------------------------- constraint-report
+
+function renderRun(doc, args = []) {
+  const root = mkdtempSync(join(tmpdir(), 'constraint-report-'))
+  const path = join(root, 'reports', '20260927-101200-constraints.json')
+  mkdirSync(dirname(path), { recursive: true })
+  writeFileSync(path, typeof doc === 'string' ? doc : JSON.stringify(doc))
+  const result = spawnSync(process.execPath, [RENDER, path, ...args], { cwd: root, encoding: 'utf8' })
+  return { root, path, result }
+}
+
+const agentRun = {
+  format: FORMAT,
+  run_ts: '20260927-101200',
+  ticket: 'PROJ-2',
+  branch: 'feat/x',
+  engine: 'agent',
+  counts: { files: 1, staticRules: 0, semanticRules: 1 },
+  semanticViolations: [{ file: 'src/Handler.php', id: 'handler~aaaa1111', constraint: 'handler', severity: 'MUST',
+    message: 'MUST: handlers are final', detail: 'Line 2: class Handler is not final' }],
+  verdict: { success: true, violations: 0, warnings: 0 },
+  rules: [{ rule: 'handler~aaaa1111', constraint: 'handler', kind: 'semantic', files: 1, verdict: 'fail', hits: 1, text: 'MUST: handlers are final' }],
+}
+
+test('constraint-report renders the markdown beside the document and recomputes the verdict', () => {
+  const { path, result } = renderRun(agentRun)
+  assert.equal(result.status, 1, result.stderr)
+  assert.deepEqual(verdict(result.stdout), { success: false, violations: 1, warnings: 0 })
+
+  const data = JSON.parse(readFileSync(path, 'utf8'))
+  assert.deepEqual(data.verdict, { success: false, violations: 1, warnings: 0 }, 'a declared verdict never survives its findings')
+  assert.deepEqual(data.staticViolations, [])
+  const report = readFileSync(path.replace(/\.json$/, '.md'), 'utf8')
+  assert.match(report, /FAILED ❌/)
+  assert.match(report, /Line 2: class Handler is not final/)
+  assert.ok(!report.includes('p(violation)'))
+  assert.equal(ruleStats.parseReport(path, readFileSync(path, 'utf8')).rows.length, 1)
+})
+
+test('constraint-report blocks on an invalid document', () => {
+  for (const doc of ['{not json', { ...agentRun, format: 'other' }, { ...agentRun, run_ts: undefined },
+    { ...agentRun, rules: undefined }, { ...agentRun, errors: 'oops' }]) {
+    const { path, result } = renderRun(doc)
+    assert.equal(result.status, 2, JSON.stringify(doc))
+    assert.deepEqual(verdict(result.stdout), { success: false, violations: 0, warnings: 0, errors: 1 })
+    assert.ok(!readdirSync(dirname(path)).some((name) => name.endsWith('.md')))
+  }
+})
+
+test('constraint-report copies the document to --out and flags verification errors', () => {
+  const { root, result } = renderRun({ ...agentRun, semanticViolations: [], errors: [{ file: 'src/Handler.php', message: 'agent returned no result' }] },
+    ['--out=gate.json'])
+  assert.equal(result.status, 2, result.stderr)
+  assert.match(result.stdout, /INCOMPLETE/)
+  assert.deepEqual(JSON.parse(readFileSync(join(root, 'gate.json'), 'utf8')).verdict, { success: false, violations: 0, warnings: 0, errors: 1 })
 })

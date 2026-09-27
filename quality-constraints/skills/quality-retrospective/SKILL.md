@@ -12,7 +12,7 @@ effort: high
 Resolve `QUALITY_ROOT` from the environment, then `.luciole.local.env`,
 then `.luciole.env`, defaulting to `.ia/quality`.
 
-NON-BLOCKING analysis. Consumes material already collected at zero cost (the constraint reports written by `quality-constraints-verify`, and the measurement blocks they carry) and derives proposals to improve the `${QUALITY_ROOT}/code/constraints/` files. PROPOSES only: never edits a constraint file, never fixes code, never commits. Appending to `tool-candidates.md` (Phase 2) is not an exception — that file changes what no checker enforces.
+NON-BLOCKING analysis. Consumes material already collected at zero cost (the constraint reports written by `quality-constraints-verify`, and the run documents they are rendered from) and derives proposals to improve the `${QUALITY_ROOT}/code/constraints/` files. PROPOSES only: never edits a constraint file, never fixes code, never commits. Appending to `tool-candidates.md` (Phase 2) is not an exception — that file changes what no checker enforces.
 
 ## Input
 
@@ -23,11 +23,11 @@ NON-BLOCKING analysis. Consumes material already collected at zero cost (the con
 
 ## Phase 1: Gather the material — 15 reads max
 
-1. **Reports** — if a folder resolved: list `*-constraints.md` there AND one level of sub-folders (`ls <dir> <dir>/*/` — a runner isolates a batch under `reports/<BATCH-ID>/`), read the **10 most recent** (lexicographic = chronological). Each lists violations with rule IDs (e.g. `HDL-002`).
+1. **Reports** — if a folder resolved: list `*-constraints.md` there AND one level of sub-folders (`ls <dir> <dir>/*/` — a runner isolates a batch under `reports/<BATCH-ID>/`), read the **10 most recent** (lexicographic = chronological). Each lists violations with rule IDs (e.g. `HDL-002`). Its `*-constraints.json` twin holds the same run as data (stable rule ids in `rules`): read it only when you need an id.
 
 2. **Cumulative measurements** (ALL reports under `REPORTS_DIR`, plus the annotations of past retrospectives):
-   - `node ${CLAUDE_PLUGIN_ROOT}/bin/rule-stats report --reports=<REPORTS_DIR> --reports='<OUT_DIR>/constraints-proposal-*.md'` — per rule: `runs`, `files_seen`, `hits`, `fp`, plus ready-made actionable sections. Computed from the `json:constraints-run` blocks of the reports and the `json:constraints-annotations` blocks of earlier proposal files — nothing is stored elsewhere. The ONLY source that can state "N runs with no finding": the prose lists violations, never the rules that stayed clean.
-   - `node ${CLAUDE_PLUGIN_ROOT}/bin/rule-stats lint` with the same `--reports` — reports whose block is missing, unreadable or left with `null` verdicts. Not a constraint flaw: a verification run that lost its measurement. Count them for Phase 4, propose nothing about them.
+   - `node ${CLAUDE_PLUGIN_ROOT}/bin/rule-stats report --reports=<REPORTS_DIR> --reports='<OUT_DIR>/constraints-proposal-*.md'` — per rule: `runs`, `files_seen`, `hits`, `fp`, plus ready-made actionable sections. Computed from the `*-constraints.json` run documents under the folder and the `json:constraints-annotations` blocks of earlier proposal files — nothing is stored elsewhere. The ONLY source that can state "N runs with no finding": the prose lists violations, never the rules that stayed clean.
+   - `node ${CLAUDE_PLUGIN_ROOT}/bin/rule-stats lint` with the same `--reports` — run documents that are unreadable or left with `null` verdicts. Not a constraint flaw: a verification run that lost its measurement. Count them for Phase 4, propose nothing about them.
    - `node ${CLAUDE_PLUGIN_ROOT}/skills/quality-constraints-verify/scripts/match-constraints.js --sweep | node ${CLAUDE_PLUGIN_ROOT}/bin/rule-stats dead-globs -` — per-glob population over the whole tracked tree. A glob at 0 there is dead; a run-scoped 0 proves nothing. If it fails or is slow, skip it and say so.
 
 3. **Shape models** — read `${QUALITY_ROOT}/onboard/scopes.json` (skip silently if absent). A scope with no `model` is MODEL PROMOTION material.
@@ -49,7 +49,7 @@ Aggregate violations BY rule across the reports, cross-reference with `rule-stat
 
 **WHEN IN DOUBT, propose NOTHING.** A single occurrence is implementation noise, not a rule flaw; 0 proposals beats weakening a rule on an isolated case.
 
-**Annotations.** A report sometimes lists a violation and, in its own prose, argues it is unfounded ("conforme à l'intention de la règle", "l'aligner divergerait de la famille") — the checker fired, the fixer disagreed, and the run block still says `fail`. That information is lost unless you record it: for each such case, note `{rule, ticket, reason}` for Phase 3. Take the `rule` id from the report's `json:constraints-run` block (never recompute it). Only a violation the report itself dismisses qualifies — your own doubt about a rule is a proposal, not an annotation. A run block already carrying `verdict: "false-positive"` for it needs no annotation.
+**Annotations.** A report sometimes lists a violation and, in its own prose, argues it is unfounded ("conforme à l'intention de la règle", "l'aligner divergerait de la famille") — the checker fired, the fixer disagreed, and the run document still says `fail`. That information is lost unless you record it: for each such case, note `{rule, ticket, reason}` for Phase 3. Take the `rule` id from the run's `*-constraints.json` (`rules[].rule`, never recompute it). Only a violation the report itself dismisses qualifies — your own doubt about a rule is a proposal, not an annotation. A run document already carrying `verdict: "false-positive"` for it needs no annotation.
 
 **MODEL PROMOTION.** Designate a candidate from the scope's population (`glob - exclude`): prefer one repeatedly cited as `evidence` in the candidates JSON, never one appearing in a report's violations. Regular entry in the dated proposal file; its **Apply** line is manual: set `"model": "{path}"` on the scope in `scopes.json`, then re-run `/quality-onboard:skills`. Skip a scope whose `model` is already set.
 
@@ -96,7 +96,7 @@ For EACH proposal, read the target constraint file (`${QUALITY_ROOT}/code/constr
 ```
 ````
 
-The `## Annotations` section and its block appear only when there is ≥ 1 annotation. The block is what `rule-stats` reads back on the next run: fenced exactly as shown, `verdict` always `false-positive`, one entry per dismissed violation. These verdicts live here, after the fact, and NOT in the verification report: rewriting a run's block would rewrite history.
+The `## Annotations` section and its block appear only when there is ≥ 1 annotation. The block is what `rule-stats` reads back on the next run: fenced exactly as shown, `verdict` always `false-positive`, one entry per dismissed violation. These verdicts live here, after the fact, and NOT in the run document: rewriting a run would rewrite history.
 
 **Otherwise** — write NO file.
 

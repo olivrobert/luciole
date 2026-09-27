@@ -304,7 +304,7 @@ function semanticId(constraint, text) {
 
 /**
  * One row per rule checked during this run — the denominator the reports were missing.
- * These rows ARE the `rules` array of the report's `json:constraints-run` block: the
+ * These rows ARE the `rules` array of the run document (`*-constraints.json`): the
  * orchestrator copies them and fills in `verdict` (and `hits`) on the semantic ones, which
  * the script cannot resolve. Static rows arrive already verdicted.
  *

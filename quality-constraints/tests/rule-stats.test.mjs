@@ -25,13 +25,9 @@ function obs(ts, rule, { kind = 'semantic', files = 10, hits = 0, fp, reason, ti
     : { t: 'obs', ts, rule, constraint: rule.split(/[#~]/)[0], kind, files, hits, text: rule }
 }
 
-// A verification report as quality-constraints-verify writes it: prose + the run block.
-function runBlock(run) {
-  return '```json:constraints-run\n' + JSON.stringify(run) + '\n```\n'
-}
-
-function report(run, prose = '# Constraints Check: PASSED ✅\n\nFiles checked: 2\n\n') {
-  return prose + runBlock(run)
+// A run document as constraint-check / constraint-report write it.
+function report(run) {
+  return JSON.stringify({ format: 'constraints-run/1', ...run }, null, 2) + '\n'
 }
 
 function annotationsBlock(a) {
@@ -129,10 +125,10 @@ test('classify: half the hits dismissed as false positive → poorly worded rule
 test('extractBlocks: only the exactly-tagged fence, indented or longer fences accepted', () => {
   const text = [
     '# Report', '', '```json', '{"not":"it"}', '```', '',
-    '  ````json:constraints-run', '  {"a":1}', '  ````', '',
-    '```json:constraints-run extra', '{"b":2}', '```',
+    '  ````json:constraints-annotations', '  {"a":1}', '  ````', '',
+    '```json:constraints-annotations extra', '{"b":2}', '```',
   ].join('\n')
-  const blocks = rs.extractBlocks(text, 'json:constraints-run')
+  const blocks = rs.extractBlocks(text, 'json:constraints-annotations')
   assert.equal(blocks.length, 1)
   assert.equal(JSON.parse(blocks[0].body).a, 1)
   assert.equal(blocks[0].line, 7)
@@ -141,14 +137,14 @@ test('extractBlocks: only the exactly-tagged fence, indented or longer fences ac
 test('extractBlocks: a tagged fence quoted inside a plain block is not a block', () => {
   // The SKILL documents the format with the block inside a ```` fence: a report that pastes
   // that documentation must not produce a phantom run.
-  const text = ['````', '```json:constraints-run', '{"run_ts":"x","rules":[]}', '```', '````'].join('\n')
-  assert.deepEqual(rs.extractBlocks(text, 'json:constraints-run'), [])
+  const text = ['````', '```json:constraints-annotations', '{"ts":"x","annotations":[]}', '```', '````'].join('\n')
+  assert.deepEqual(rs.extractBlocks(text, 'json:constraints-annotations'), [])
 })
 
 // --------------------------------------------------------------- parseReports
 
 test('parseReport: one verdict per rule → pass counts 0 hits, fail counts its hits, n/a nothing', () => {
-  const { rows, problems } = rs.parseReport('r.md', report({
+  const { rows, problems } = rs.parseReport('r.json', report({
     run_ts: '20260909-095722',
     ticket: 'FOOD-407',
     branch: 'fix/x',
@@ -172,7 +168,7 @@ test('parseReport: one verdict per rule → pass counts 0 hits, fail counts its 
 })
 
 test('parseReport: false-positive verdict → a hit AND an fp with the reason', () => {
-  const { rows } = rs.parseReport('r.md', report({
+  const { rows } = rs.parseReport('r.json', report({
     run_ts: '20260909-095722',
     ticket: 'FOOD-407',
     rules: [{ rule: 'functional-test~8a9b0000', files: 1, verdict: 'false-positive', hits: 1, reason: 'partial Twig partagé' }],
@@ -185,14 +181,14 @@ test('parseReport: false-positive verdict → a hit AND an fp with the reason', 
 })
 
 test('parseReport: kind derived from the id when the block omits it', () => {
-  const { rows } = rs.parseReport('r.md', report({
+  const { rows } = rs.parseReport('r.json', report({
     run_ts: 't', rules: [{ rule: 'a~1', verdict: 'pass' }, { rule: 'a#A-1', verdict: 'pass' }],
   }))
   assert.deepEqual(rows.map((r) => r.kind), ['semantic', 'static'])
 })
 
 test('parseReport: a null verdict is a missing measurement — flagged, never a pass', () => {
-  const { rows, problems } = rs.parseReport('r.md', report({
+  const { rows, problems } = rs.parseReport('r.json', report({
     run_ts: 't', rules: [{ rule: 'a~1', verdict: null }, { rule: 'a~2', verdict: 'maybe' }, { rule: 'a~3', verdict: 'pass' }],
   }))
   assert.equal(rows.length, 1)
@@ -202,27 +198,40 @@ test('parseReport: a null verdict is a missing measurement — flagged, never a 
 })
 
 test('parseReport: fail without hits → counted as 1 file and flagged', () => {
-  const { rows, problems } = rs.parseReport('r.md', report({ run_ts: 't', rules: [{ rule: 'a~1', verdict: 'fail' }] }))
+  const { rows, problems } = rs.parseReport('r.json', report({ run_ts: 't', rules: [{ rule: 'a~1', verdict: 'fail' }] }))
   assert.equal(rows[0].hits, 1)
   assert.match(problems[0].msg, /fail without hits/)
 })
 
-test('parseReport: missing run_ts → the whole block is refused (dedup impossible)', () => {
-  const { rows, problems, blocks } = rs.parseReport('r.md', report({ rules: [{ rule: 'a~1', verdict: 'pass' }] }))
+test('parseReport: missing run_ts → the whole document is refused (dedup impossible)', () => {
+  const { rows, problems, blocks } = rs.parseReport('r.json', report({ rules: [{ rule: 'a~1', verdict: 'pass' }] }))
   assert.equal(blocks, 1)
   assert.deepEqual(rows, [])
   assert.match(problems[0].msg, /without run_ts/)
 })
 
-test('parseReport: unreadable JSON → problem with the line of the fence, not fatal', () => {
-  const { rows, problems } = rs.parseReport('r.md', '# x\n\n```json:constraints-run\n{"run_ts": \n```\n')
+test('parseReport: unreadable JSON → a problem, not fatal', () => {
+  const { rows, problems } = rs.parseReport('r.json', '{"run_ts": ')
   assert.deepEqual(rows, [])
-  assert.equal(problems[0].line, 3)
-  assert.match(problems[0].msg, /unreadable/)
+  assert.equal(problems[0].line, 1)
+  assert.match(problems[0].msg, /unreadable run document/)
+})
+
+test('parseReport: a JSON file that is not a run document is refused', () => {
+  const { rows, problems } = rs.parseReport('other.json', JSON.stringify({ run_ts: 't', rules: [{ rule: 'a~1', verdict: 'pass' }] }))
+  assert.deepEqual(rows, [])
+  assert.match(problems[0].msg, /not a run document/)
+})
+
+test('parseReport: a run block pasted in markdown is not a measurement', () => {
+  const md = '# Report\n\n```json:constraints-run\n' + JSON.stringify({ run_ts: 't', rules: [{ rule: 'a~1', verdict: 'pass' }] }) + '\n```\n'
+  const { rows, blocks } = rs.parseReport('r.md', md)
+  assert.deepEqual(rows, [])
+  assert.equal(blocks, 0)
 })
 
 test('parseReport: zero rules is not a clean run — flagged', () => {
-  const { problems } = rs.parseReport('r.md', report({ run_ts: 't', rules: [] }))
+  const { problems } = rs.parseReport('r.json', report({ run_ts: 't', rules: [] }))
   assert.match(problems[0].msg, /zero rules/)
 })
 
@@ -244,10 +253,10 @@ test('parseReport: annotations block → fp rows, only false-positive is measure
   assert.match(problems[0].msg, /only false-positive is measured/)
 })
 
-test('parseReports: a report without any block is listed, not counted, not a problem', () => {
+test('parseReports: a markdown file without any block is listed, not counted, not a problem', () => {
   const { rows, problems, noBlock } = rs.parseReports([
     { path: 'old.md', text: '# Constraints Check: PASSED ✅\n\nFiles checked: 3\n' },
-    { path: 'new.md', text: report({ run_ts: 't', rules: [{ rule: 'a~1', verdict: 'pass', files: 2 }] }) },
+    { path: 'new.json', text: report({ run_ts: 't', rules: [{ rule: 'a~1', verdict: 'pass', files: 2 }] }) },
   ])
   assert.equal(rows.length, 1)
   assert.deepEqual(problems, [])
@@ -257,8 +266,8 @@ test('parseReports: a report without any block is listed, not counted, not a pro
 test('parseReports → aggregate: the same run in two files counts once, an annotation joins by rule', () => {
   const run = { run_ts: '20260101-0900', ticket: 'P-1', rules: [{ rule: 'a~1', verdict: 'fail', hits: 2, files: 4 }] }
   const { rows } = rs.parseReports([
-    { path: 'a.md', text: report(run) },
-    { path: 'copy.md', text: report(run) },
+    { path: 'a.json', text: report(run) },
+    { path: 'copy.json', text: report(run) },
     { path: 'proposal.md', text: annotationsBlock({ ts: 'x', annotations: [{ rule: 'a~1', ticket: 'P-1', verdict: 'false-positive', reason: 'r' }] }) },
   ])
   const [a] = rs.aggregate(rows)
@@ -301,14 +310,14 @@ test('CLI report: no --reports → exit 2 that shows the expected form', () => {
 test('CLI report: reads every report matched by several globs across two layouts', () => {
   const root = dir()
   writeReports(root, {
-    '.claude/work-items/P-1/quality-reports/constraints/20260101-0900-constraints.md': report(semanticRun('20260101-0900')),
-    '.lance-nuit/work-items/P-2/reports/20260102-0900-constraints.md': report(semanticRun('20260102-0900')),
-    '.lance-nuit/work-items/P-3/reports/LOT-01/20260103-0900-constraints.md': report(semanticRun('20260103-0900')),
+    '.claude/work-items/P-1/quality-reports/constraints/20260101-0900-constraints.json': report(semanticRun('20260101-0900')),
+    '.lance-nuit/work-items/P-2/reports/20260102-0900-constraints.json': report(semanticRun('20260102-0900')),
+    '.lance-nuit/work-items/P-3/reports/LOT-01/20260103-0900-constraints.json': report(semanticRun('20260103-0900')),
     '.lance-nuit/work-items/P-3/reports/LOT-01/20260103-0900-review.md': '# not a constraints report\n',
   })
   const res = cli(['report', '--json',
-    `--reports=${root}/.claude/work-items/**/*-constraints.md`,
-    '--reports', `${root}/.lance-nuit/work-items/**/*-constraints.md`])
+    `--reports=${root}/.claude/work-items/**/*-constraints.json`,
+    '--reports', `${root}/.lance-nuit/work-items/**/*-constraints.json`])
   assert.equal(res.status, 0, res.stderr)
   const out = JSON.parse(res.stdout)
   assert.equal(out.reports, 3)
@@ -316,13 +325,17 @@ test('CLI report: reads every report matched by several globs across two layouts
   assert.equal(out.rules[0].files_seen, 90)
 })
 
-test('CLI report: a directory value is read recursively', () => {
+test('CLI report: a directory value reads its run documents recursively, not the rendered .md', () => {
   const root = dir()
   writeReports(root, {
-    'a/1-constraints.md': report(semanticRun('20260101-0900')),
-    'a/deep/2-constraints.md': report(semanticRun('20260102-0900')),
+    'a/1-constraints.json': report(semanticRun('20260101-0900')),
+    'a/1-constraints.md': '# Constraints Check: PASSED ✅\n',
+    'a/deep/2-constraints.json': report(semanticRun('20260102-0900')),
+    'a/deep/reuse-audit.json': '{"not":"a run"}',
   })
   const out = JSON.parse(cli(['report', '--json', `--reports=${root}/a`]).stdout)
+  assert.equal(out.reports, 2)
+  assert.deepEqual(out.problems, [])
   assert.equal(out.rules[0].runs, 2)
 })
 
@@ -337,16 +350,16 @@ test('CLI report: reports present but none with a block → says so instead of a
   writeReports(root, { 'old-constraints.md': '# Constraints Check: PASSED ✅\n' })
   const res = cli(['report', `--reports=${root}/*.md`])
   assert.equal(res.status, 0)
-  assert.match(res.stdout, /1 report\(s\) read, none carries a measurable block/)
+  assert.match(res.stdout, /1 report\(s\) read, none carries a measurement/)
 })
 
 test('CLI report: thresholds overridable on the command line', () => {
   const root = dir()
   writeReports(root, {
-    '1-constraints.md': report(semanticRun('20260101-0900')),
-    '2-constraints.md': report(semanticRun('20260102-0900')),
+    '1-constraints.json': report(semanticRun('20260101-0900')),
+    '2-constraints.json': report(semanticRun('20260102-0900')),
   })
-  const pat = `--reports=${root}/*.md`
+  const pat = `--reports=${root}/*.json`
   assert.equal(JSON.parse(cli(['report', '--json', pat]).stdout).promotion.length, 0, 'default threshold = 5 runs')
   const relaxed = JSON.parse(cli(['report', '--json', pat, '--min-runs=2']).stdout)
   assert.equal(relaxed.promotion.length, 1)
@@ -356,46 +369,46 @@ test('CLI report: thresholds overridable on the command line', () => {
 test('CLI report: table + a pointer to lint when a block has problems', () => {
   const root = dir()
   writeReports(root, {
-    'ok-constraints.md': report(semanticRun('20260101-0900')),
-    'bad-constraints.md': report({ run_ts: '20260102-0900', rules: [{ rule: 'e~cafe0001', kind: 'semantic', files: 3, verdict: null }] }),
-    'old-constraints.md': '# Constraints Check: PASSED ✅\n',
+    'ok-constraints.json': report(semanticRun('20260101-0900')),
+    'bad-constraints.json': report({ run_ts: '20260102-0900', rules: [{ rule: 'e~cafe0001', kind: 'semantic', files: 3, verdict: null }] }),
+    'proposal.md': '# Proposal without annotations\n',
   })
-  const res = cli(['report', `--reports=${root}/*.md`])
+  const res = cli(['report', `--reports=${root}/*`])
   assert.equal(res.status, 0, res.stderr)
   assert.match(res.stdout, /^RULE\s+KIND\s+RUNS/m)
-  assert.match(res.stdout, /1 without a measurement block/)
-  assert.match(res.stdout, /1 problem\(s\) in the blocks — run `rule-stats lint`/)
+  assert.match(res.stdout, /1 markdown file\(s\) without an annotation block/)
+  assert.match(res.stdout, /1 problem\(s\) in the measurements — run `rule-stats lint`/)
 })
 
 test('CLI report: an annotation in a retrospective deliverable joins the run by rule', () => {
   const root = dir()
   writeReports(root, {
-    'reports/1-constraints.md': report({ run_ts: '20260101-0900', ticket: 'P-1', rules: [{ rule: 'a#A-1', kind: 'static', files: 3, verdict: 'fail', hits: 2, text: 'r' }] }),
+    'reports/1-constraints.json': report({ run_ts: '20260101-0900', ticket: 'P-1', rules: [{ rule: 'a#A-1', kind: 'static', files: 3, verdict: 'fail', hits: 2, text: 'r' }] }),
     'constraints-proposal-2026-01-02.md': '# Proposal\n\n' + annotationsBlock({ ts: '20260102-1000', annotations: [{ rule: 'a#A-1', ticket: 'P-1', verdict: 'false-positive', reason: 'out of scope' }] }),
   })
-  const out = JSON.parse(cli(['report', '--json', `--reports=${root}/**/*.md`]).stdout)
+  const out = JSON.parse(cli(['report', '--json', `--reports=${root}/reports`, `--reports=${root}/constraints-proposal-*.md`]).stdout)
   assert.equal(out.rules[0].hits, 2)
   assert.equal(out.rules[0].fp, 1)
 })
 
-test('CLI lint: lists each problem as path:line, reports without block, exit 1', () => {
+test('CLI lint: lists each problem as path:line, markdown without block, exit 1', () => {
   const root = dir()
   writeReports(root, {
-    'ok.md': report(semanticRun('20260101-0900')),
-    'bad.md': '# x\n\n```json:constraints-run\n' + JSON.stringify({ run_ts: 't', rules: [{ rule: 'a~1', verdict: null }] }) + '\n```\n',
+    'ok.json': report(semanticRun('20260101-0900')),
+    'bad.json': report({ run_ts: 't', rules: [{ rule: 'a~1', verdict: null }] }),
     'old.md': '# Constraints Check: PASSED ✅\n',
   })
-  const res = cli(['lint', `--reports=${root}/*.md`])
+  const res = cli(['lint', `--reports=${root}/*`])
   assert.equal(res.status, 1)
-  assert.match(res.stdout, new RegExp(`${root}/bad.md:3: a~1: verdict null`))
-  assert.match(res.stdout, /1 report\(s\) without a measurement block/)
+  assert.match(res.stdout, new RegExp(`${root}/bad.json:1: a~1: verdict null`))
+  assert.match(res.stdout, /1 markdown file\(s\) without an annotation block/)
   assert.match(res.stdout, /3 report\(s\), 1 problem\(s\), 1 without block/)
 })
 
 test('CLI lint: clean reports → exit 0', () => {
   const root = dir()
-  writeReports(root, { 'ok.md': report(semanticRun('20260101-0900')) })
-  const res = cli(['lint', `--reports=${root}/*.md`])
+  writeReports(root, { 'ok.json': report(semanticRun('20260101-0900')) })
+  const res = cli(['lint', `--reports=${root}/*.json`])
   assert.equal(res.status, 0, res.stdout)
 })
 

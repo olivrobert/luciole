@@ -22,7 +22,7 @@ external consumers.
 | Grammar | this file | **normative** |
 | Executable grammar | `lib/parse-constraints.js` | conforming |
 | Execution / grouping / identity | `skills/quality-constraints-verify/scripts/match-constraints.js` | conforming |
-| Measurement blocks and their projection | `bin/rule-stats`, `bin/lib/rule-stats.js` | conforming (§5 is normative) |
+| Run documents, annotation blocks and their projection | `bin/rule-stats`, `bin/lib/rule-stats.js` | conforming (§5 is normative) |
 | Format conformance | `bin/constraint-lint` | **executable form of this SPEC** |
 | Pre-write measurement | `bin/measure-candidates` | conforming (same glob grammar, same regex grammar, **same line-by-line evaluation** — a probe measured here behaves identically once written as a rule) |
 | Initial generation | `quality-onboard:onboard` (track A) | conforming |
@@ -242,7 +242,7 @@ fixer then edits correct code.
 - same grammar, same engine, same constraints as the main regex (single-line, trimmed,
   no ` | `). A gate that does not compile makes the whole rule `kind: invalid` — never
   silently unfiltered;
-- `files` in the run block reports the triggered population, and `hits` counts violations
+- `files` in the run document reports the triggered population, and `hits` counts violations
   within it.
 
 > **A gate must never be cut to make a rule pass.** A gate narrowed until it retains
@@ -263,7 +263,7 @@ fixer then edits correct code.
 - **kept in the file** — the file is injected verbatim into generation prompts:
   deleting the rule teaches the generator to stop applying the convention, and the
   tool then blocks the build behind it;
-- **recorded in the run block**, which proves the marker points at a tool rule that is
+- **recorded in the run document**, which proves the marker points at a tool rule that is
   actually registered.
 
 > **`via=` is for a tool that REJECTS, not one that REWRITES.** A blocking analyser
@@ -329,10 +329,10 @@ Rules that belong in a tool rather than in a constraint are recorded in **one** 
 
 Exactly one of the two should exist; which one tells every consumer how to write to it.
 
-## 5. Rule identity and measurement blocks
+## 5. Rule identity and measurement sources
 
 Every rule has a stable identity, and every verification run records one verdict per
-identity in the report it writes. Two namespaces, never colliding:
+identity in the run document it writes. Two namespaces, never colliding:
 
 | Type | Identity | Stability |
 |---|---|---|
@@ -354,19 +354,27 @@ Corollary: never duplicate a semantic rule text between `conventions/x.md` and
 `decisions/x.md` — same key + same text = same identity, the second is a ghost
 duplicate.
 
-### Measurement blocks — normative
+### Measurement sources — normative
 
-There is **no store**. The statistics are a projection of two fenced blocks, computed on
-demand by `rule-stats report --reports=<glob>` over whatever files the caller names. The
-reports are committed with their ticket and are the archive; where they live is the
-project's business and the kit hardcodes nothing (no default path, no config file).
+There is **no store**. The statistics are a projection of run documents and annotation
+blocks, computed on demand by `rule-stats report --reports=<glob>` over whatever files the
+caller names. The reports are committed with their ticket and are the archive; where they
+live is the project's business and the kit hardcodes nothing (no default path, no config
+file).
 
-**Run block** — written by `quality-constraints-verify` at the end of every report,
-passing or failing. The fence info string is **exactly** `json:constraints-run`.
+**Run document** — `{run_ts}-constraints.json`, written by both verification engines on
+every run, passing or failing (`constraint-check` directly; the agent workflow writes it and
+`constraint-report` normalizes it). It is the single source of the run: the
+`{run_ts}-constraints.md` beside it is rendered from it for human reading and carries no
+data a machine parses back. `rule-stats` reads a `.json` path as a run document; a
+directory is read as `<dir>/**/*-constraints.json`.
 
-````markdown
-```json:constraints-run
-{"run_ts":"20260909-095722","ticket":"FOOD-407","branch":"fix/x",
+```json
+{"format":"constraints-run/1","run_ts":"20260909-095722","ticket":"FOOD-407","branch":"fix/x","engine":"typesafe:jev-latest",
+ "verdict":{"success":false,"violations":1,"warnings":0},
+ "counts":{"files":1,"staticRules":1,"semanticRules":4,"violations":1,"warnings":0,"errors":0},
+ "staticViolations":[],"staticWarnings":[],"semanticViolations":[{"file":"…","id":"controller~c3d4e5f6","severity":"MUST","message":"…"}],
+ "semanticWarnings":[],"advisories":[],"errors":[],"summary":[],
  "rules":[
   {"rule":"controller~a1b2c3d4","kind":"semantic","files":1,"verdict":"pass","hits":0,"text":"…"},
   {"rule":"controller~c3d4e5f6","kind":"semantic","files":1,"verdict":"fail","hits":1,"text":"…"},
@@ -375,11 +383,14 @@ passing or failing. The fence info string is **exactly** `json:constraints-run`.
   {"rule":"controller#CTL-004","kind":"static","files":1,"verdict":"pass","hits":0,"text":"…"}
  ]}
 ```
-````
+
+`verdict` and the `violations` / `warnings` / `errors` counts are derived from the finding
+lists by code, never taken from the producer. The fields `rule-stats` reads:
 
 | Field | Required | Meaning |
 |---|---|---|
-| `run_ts` | yes | the matcher's `run_ts`; deduplication key with `rule` — a run copied into two files counts once; a block without it is refused |
+| `format` | yes | exactly `constraints-run/1`; any other JSON file is refused as "not a run document" |
+| `run_ts` | yes | the matcher's `run_ts`; deduplication key with `rule` — a run copied into two files counts once; a document without it is refused |
 | `ticket`, `branch` | no | labels, carried into the fp rows |
 | `rules[].rule` | yes | the identity above, copied from the matcher's `feedback[]` |
 | `rules[].verdict` | yes | `pass` (0 hits) · `fail` (`hits` files in violation, ≥ 1) · `n/a` (not applicable to these files: no observation) · `false-positive` (fired, unfounded: counted as `hits` AND as an fp, `reason` recommended) |
@@ -390,10 +401,10 @@ passing or failing. The fence info string is **exactly** `json:constraints-run`.
 A `verdict` that is `null` or unknown is a **lost measurement**: the rule is skipped and
 `rule-stats lint` reports it. It is never read as a pass.
 
-**Annotations block** — written by `quality-retrospective` in its dated deliverable, for
-verdicts revised after the run (a violation the fixer or reviewer later dismissed). The
-run's own block is never rewritten: that would rewrite history. Info string **exactly**
-`json:constraints-annotations`.
+**Annotations block** — written by `quality-retrospective` in its dated deliverable (a
+markdown file), for verdicts revised after the run (a violation the fixer or reviewer later
+dismissed). The run document is never rewritten: that would rewrite history. Info string
+**exactly** `json:constraints-annotations`.
 
 ````markdown
 ```json:constraints-annotations
@@ -409,7 +420,7 @@ Only `verdict: "false-positive"` is measured. An fp is deduplicated on
 and ticket need two distinct reasons; the same one re-emitted by a re-run counts once;
 `n` declares several occurrences of the same reason.
 
-Both blocks tolerate indentation and longer fences (```` ```` ````); a tagged fence quoted
+The block tolerates indentation and longer fences (```` ```` ````); a tagged fence quoted
 inside another fenced block is documentation, not a block.
 
 ## 6. What the format does not say
@@ -430,7 +441,7 @@ The lint answers only: **will this rule be executed as written?**
 constraint-lint                 # ${QUALITY_ROOT}/code/constraints
 constraint-lint <dir|file>...   # e.g. a plugin's baseline
 constraint-lint --strict        # warnings counted as errors
-rule-stats lint --reports=<glob> # reports whose measurement block is missing, unreadable or unfilled
+rule-stats lint --reports=<glob> # run documents that are unreadable or left unfilled
 ```
 
 Exit codes: `0` conforming · `1` format errors · `2` **nothing could be checked**
@@ -459,7 +470,8 @@ Hook points:
 `.luciole.env`, then `agent`. The standalone `constraint-check` CLI always uses Jev. Both engines use the
 same local matcher for static rules and scope selection.
 
-The final `json:verdict` block carries `success`, `violations` (MUST findings), and
+Both engines end with the same `json:verdict` block, a copy of the run document's
+`verdict`: it carries `success`, `violations` (MUST findings), and
 `warnings` (SHOULD and advisory findings). Verification errors add an `errors` count.
 `success` is true only when there are no MUST violations and verification is complete.
 An API failure, missing or invalid answer, unreadable file, or incomplete agent coverage

@@ -8,6 +8,7 @@ import { execSync, spawnSync } from 'node:child_process'
 
 const SCRIPT = join(dirname(fileURLToPath(import.meta.url)), '..', 'skills', 'quality-constraints-verify', 'scripts', 'match-constraints.js')
 const RULE_STATS = join(dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'rule-stats')
+const CONSTRAINT_REPORT = join(dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'constraint-report')
 
 // Disposable git repo reproducing the real structure observed (bandai):
 // conventions/api-client.md + decisions/api-client.md — same basename in 2 subdirectories.
@@ -413,12 +414,13 @@ test('no modified file → {"error":"no_files"}', () => {
   assert.equal(data.error, 'no_files')
 })
 
-// ------------------------------------------------ measurement block (rule-stats)
+// ------------------------------------------------ run document (rule-stats)
 
 // Full chain as quality-constraints-verify describes it: the script emits the `feedback`
 // rows with static verdicts resolved, the orchestrator fills in the semantic verdicts and
-// writes them as the report's `json:constraints-run` block, rule-stats projects the reports.
-test('end to end: match-constraints feedback → report block → rule-stats report', () => {
+// writes them as the run document's `rules`, constraint-report renders it, rule-stats
+// projects the documents.
+test('end to end: match-constraints feedback → run document → rule-stats report', () => {
   const { root } = makeRepo()
   appendFileSync(join(root, 'src', 'Acme', 'FooApiClient.php'), '// touched\n')
   const data = JSON.parse(run(root).stdout)
@@ -430,16 +432,17 @@ test('end to end: match-constraints feedback → report block → rule-stats rep
 
   const rules = data.feedback.map((r, i) => (r.verdict !== null ? r
     : { ...r, verdict: i === 0 ? 'fail' : 'pass', hits: i === 0 ? 1 : 0 }))
-  const block = { run_ts: data.run_ts, ticket: 'PROJ-1', branch: data.branch, rules }
+  const doc = { format: 'constraints-run/1', run_ts: data.run_ts, ticket: 'PROJ-1', branch: data.branch, engine: 'agent', rules }
   const reportDir = join(root, 'reports')
   mkdirSync(reportDir)
-  writeFileSync(join(reportDir, `${data.run_ts}-constraints.md`),
-    '# Constraints Check\n\n```json:constraints-run\n' + JSON.stringify(block) + '\n```\n')
+  writeFileSync(join(reportDir, `${data.run_ts}-constraints.json`), JSON.stringify(doc))
+  const rendered = spawnSync('node', [CONSTRAINT_REPORT, join(reportDir, `${data.run_ts}-constraints.json`)], { cwd: root, encoding: 'utf8' })
+  assert.equal(rendered.status, 0, rendered.stderr)
 
-  const lint = spawnSync('node', [RULE_STATS, 'lint', `--reports=${reportDir}/*.md`], { cwd: root, encoding: 'utf8' })
+  const lint = spawnSync('node', [RULE_STATS, 'lint', `--reports=${reportDir}`], { cwd: root, encoding: 'utf8' })
   assert.equal(lint.status, 0, lint.stdout)
 
-  const report = JSON.parse(spawnSync('node', [RULE_STATS, 'report', '--json', `--reports=${reportDir}/*.md`], {
+  const report = JSON.parse(spawnSync('node', [RULE_STATS, 'report', '--json', `--reports=${reportDir}`], {
     cwd: root, encoding: 'utf8',
   }).stdout)
   // All rules from the run — static ones resolved by the script, semantic ones by the orchestrator

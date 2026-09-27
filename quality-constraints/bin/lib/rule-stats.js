@@ -2,14 +2,14 @@
 // rule-stats — SINGLE SOURCE for aggregating constraint measurements.
 //
 // There is NO store. The statistics are a projection of the deliverables, computed on
-// demand from two kinds of fenced blocks:
+// demand from two sources:
 //
-//   ```json:constraints-run           — in a verification report, one verdict per rule
-//   {"run_ts":"…","ticket":"…","branch":"…",
+//   <run_ts>-constraints.json         — a verification run document, one verdict per rule
+//   {"format":"constraints-run/1","run_ts":"…","ticket":"…","branch":"…",
 //    "rules":[{"rule":"ctl~a1b2","verdict":"pass|fail|n/a|false-positive",
-//              "files":N,"hits":N,"kind":"…","text":"…","reason":"…"}]}
+//              "files":N,"hits":N,"kind":"…","text":"…","reason":"…"}], …}
 //
-//   ```json:constraints-annotations   — in a retrospective deliverable, verdicts revised
+//   ```json:constraints-annotations   — a fenced block in a retrospective deliverable (.md),
 //   {"ts":"…","annotations":[{"rule":"…","ticket":"…","verdict":"false-positive",
 //                              "reason":"…","n":1}]}
 //
@@ -33,13 +33,13 @@ const DEFAULTS = {
   maxFp: 0, // a single confirmed false positive disqualifies promotion
 }
 
-const RUN_FENCE = 'json:constraints-run'
+const RUN_FORMAT = 'constraints-run/1'
 const ANNOTATIONS_FENCE = 'json:constraints-annotations'
 const VERDICTS = new Set(['pass', 'fail', 'n/a', 'false-positive'])
 
 // Extracts every fenced block whose info string is exactly `tag`. The fence may be
 // indented (a block quoted in a list) and use 3+ backticks; the closing fence must have
-// at least as many. Anything else on the info line (`json:constraints-run extra`) is NOT
+// at least as many. Anything else on the info line (`json:constraints-annotations extra`) is NOT
 // the block: an agent that decorates the tag breaks the contract, and lint must say so
 // rather than silently read a neighbor.
 function extractBlocks(text, tag) {
@@ -78,82 +78,94 @@ function badRow(rows, path, line, msg) {
   rows.push({ path, line, msg })
 }
 
-// Turns the blocks of ONE report into rows. Returns:
+function parseRun(path, text, rows, problems) {
+  // A JSON document has no fence to point at: its problems anchor on line 1.
+  const where = 1
+  let o
+  try {
+    o = JSON.parse(text)
+  } catch (e) {
+    badRow(problems, path, where, `unreadable run document — ${e.message}`)
+    return
+  }
+  if (!o || typeof o !== 'object' || o.format !== RUN_FORMAT) {
+    badRow(problems, path, where, `not a run document — expected "format": "${RUN_FORMAT}"`)
+    return
+  }
+  const ts = o.run_ts
+  if (typeof ts !== 'string' || !ts) {
+    // Without a timestamp two copies of the same run would count twice: refuse the document.
+    badRow(problems, path, where, 'run document without run_ts — cannot deduplicate, ignored')
+    return
+  }
+  if (!Array.isArray(o.rules)) {
+    badRow(problems, path, where, 'run document without a rules array')
+    return
+  }
+  if (o.rules.length === 0) {
+    // A run with no rule is not a clean run: nothing was measured. Reported, not counted.
+    badRow(problems, path, where, 'run document with zero rules — nothing was measured')
+  }
+  const ticket = typeof o.ticket === 'string' && o.ticket ? o.ticket : null
+  const branch = typeof o.branch === 'string' && o.branch ? o.branch : null
+  for (const [i, r] of o.rules.entries()) {
+    if (!r || typeof r.rule !== 'string' || !r.rule) {
+      badRow(problems, path, where, `rule #${i + 1} without an identifier`)
+      continue
+    }
+    if (!VERDICTS.has(r.verdict)) {
+      // `null` = the orchestrator never filled it in. Counting it as a pass would
+      // fabricate proof of conformity out of an absence of measurement.
+      badRow(problems, path, where, `${r.rule}: verdict ${JSON.stringify(r.verdict === undefined ? null : r.verdict)} — expected pass|fail|n/a|false-positive`)
+      continue
+    }
+    if (r.verdict === 'n/a') continue // rule not applicable to these files: no observation
+    const files = Number(r.files) || 0
+    let hits = 0
+    if (r.verdict !== 'pass') {
+      // fail / false-positive: at least one file is concerned, `hits` says how many
+      if (r.hits === null || r.hits === undefined) {
+        hits = 1
+        badRow(problems, path, where, `${r.rule}: ${r.verdict} without hits — counted as 1 file`)
+      } else {
+        hits = Math.max(1, Number(r.hits) || 0)
+      }
+    }
+    rows.push({
+      t: 'obs',
+      ts,
+      ticket,
+      branch,
+      rule: r.rule,
+      constraint: r.constraint || r.rule.split(/[#~]/)[0],
+      kind: kindOf(r.rule, r.kind),
+      files,
+      hits,
+      text: r.text || '',
+    })
+    if (r.verdict === 'false-positive') {
+      // A false positive declared IN the run: the checker itself judged the hit unfounded.
+      // Counted as a hit (the rule did fire) AND as an fp (it should not have).
+      rows.push({ t: 'fp', ts, ticket, rule: r.rule, n: hits, reason: r.reason || '' })
+    }
+  }
+}
+
+// Turns ONE source into rows: a `.json` path is a run document, anything else is read for
+// annotation blocks. Returns:
 //   rows      — obs/fp rows for `aggregate()`
-//   problems  — `{path, line, msg}`; a report with problems still yields the rows it could
-//   blocks    — number of blocks found (0 = a report from before the format, not an error)
+//   problems  — `{path, line, msg}`; a source with problems still yields the rows it could
+//   blocks    — number of measurements found (0 = nothing measurable, not an error)
 function parseReport(path, text) {
   const rows = []
   const problems = []
-  let blocks = 0
 
-  for (const b of extractBlocks(text, RUN_FENCE)) {
-    blocks++
-    let o
-    try {
-      o = JSON.parse(b.body)
-    } catch (e) {
-      badRow(problems, path, b.line, `unreadable ${RUN_FENCE} block — ${e.message}`)
-      continue
-    }
-    const ts = o && (o.run_ts || o.ts)
-    if (!o || typeof o !== 'object' || typeof ts !== 'string' || !ts) {
-      // Without a timestamp two copies of the same run would count twice: refuse the block.
-      badRow(problems, path, b.line, `${RUN_FENCE} block without run_ts — cannot deduplicate, ignored`)
-      continue
-    }
-    if (!Array.isArray(o.rules)) {
-      badRow(problems, path, b.line, `${RUN_FENCE} block without a rules array`)
-      continue
-    }
-    if (o.rules.length === 0) {
-      // A run with no rule is not a clean run: nothing was measured. Reported, not counted.
-      badRow(problems, path, b.line, `${RUN_FENCE} block with zero rules — nothing was measured`)
-    }
-    const ticket = typeof o.ticket === 'string' && o.ticket ? o.ticket : null
-    const branch = typeof o.branch === 'string' && o.branch ? o.branch : null
-    for (const [i, r] of o.rules.entries()) {
-      if (!r || typeof r.rule !== 'string' || !r.rule) {
-        badRow(problems, path, b.line, `rule #${i + 1} without an identifier`)
-        continue
-      }
-      if (!VERDICTS.has(r.verdict)) {
-        // `null` = the orchestrator never filled it in. Counting it as a pass would
-        // fabricate proof of conformity out of an absence of measurement.
-        badRow(problems, path, b.line, `${r.rule}: verdict ${JSON.stringify(r.verdict === undefined ? null : r.verdict)} — expected pass|fail|n/a|false-positive`)
-        continue
-      }
-      if (r.verdict === 'n/a') continue // rule not applicable to these files: no observation
-      const files = Number(r.files) || 0
-      let hits = 0
-      if (r.verdict !== 'pass') {
-        // fail / false-positive: at least one file is concerned, `hits` says how many
-        if (r.hits === null || r.hits === undefined) {
-          hits = 1
-          badRow(problems, path, b.line, `${r.rule}: ${r.verdict} without hits — counted as 1 file`)
-        } else {
-          hits = Math.max(1, Number(r.hits) || 0)
-        }
-      }
-      rows.push({
-        t: 'obs',
-        ts,
-        ticket,
-        branch,
-        rule: r.rule,
-        constraint: r.constraint || r.rule.split(/[#~]/)[0],
-        kind: kindOf(r.rule, r.kind),
-        files,
-        hits,
-        text: r.text || '',
-      })
-      if (r.verdict === 'false-positive') {
-        // A false positive declared IN the run: the checker itself judged the hit unfounded.
-        // Counted as a hit (the rule did fire) AND as an fp (it should not have).
-        rows.push({ t: 'fp', ts, ticket, rule: r.rule, n: hits, reason: r.reason || '' })
-      }
-    }
+  if (String(path).endsWith('.json')) {
+    parseRun(path, text, rows, problems)
+    return { rows, problems, blocks: 1 }
   }
+
+  let blocks = 0
 
   for (const b of extractBlocks(text, ANNOTATIONS_FENCE)) {
     blocks++
@@ -196,7 +208,7 @@ function parseReport(path, text) {
 // `reports` = [{path, text}]. Returns everything `report` and `lint` need:
 //   rows      — for `aggregate()`
 //   problems  — every defect, with the file and the block's line
-//   noBlock   — reports with no block at all (pre-format reports: listed, never counted)
+//   noBlock   — markdown sources with no annotation block (listed, never counted)
 function parseReports(reports) {
   const rows = []
   const problems = []
@@ -326,7 +338,7 @@ function deadGlobs(sweep) {
 
 module.exports = {
   DEFAULTS,
-  RUN_FENCE,
+  RUN_FORMAT,
   ANNOTATIONS_FENCE,
   VERDICTS,
   extractBlocks,

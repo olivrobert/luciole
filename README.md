@@ -137,8 +137,15 @@ Files: 12 | Static: 31 | Semantic: 4 | Violations: 1 | Warnings: 0 | Errors: 0
 - src/Controller/InvoiceController.php:42 CTL-002 (MUST): MUST NOT use ->getDoctrine()
 ```
 
-The report ends with a `json:verdict` block. In CI, gate on `success` (or the exit
-status), not on `violations`: an incomplete check fails with zero violations.
+Each run writes two files under `${QUALITY_ROOT}/code/reports/constraints/` (or
+`--reports=<dir>`): `<run_ts>-constraints.json`, the run document (findings, verdict,
+one measurement per rule), and `<run_ts>-constraints.md`, rendered from it for reading.
+Both engines produce the same pair. `--out=<path>` also copies the document to a fixed path
+a pipeline can read.
+
+The terminal output ends with a `json:verdict` block, the document's `verdict`. In CI, gate
+on `success` (or the exit status), not on `violations`: an incomplete check fails with zero
+violations.
 
 ```json
 {"success": false, "violations": 0, "warnings": 0, "errors": 1}
@@ -213,8 +220,7 @@ express the proposed rules and investigates candidates that measurement could no
 
 ## The measurement loop
 
-Every verification report carries a `json:constraints-run` block: one verdict per rule
-checked, clean or not. Keep the reports (`--reports=<dir>`): they are the only archive.
+Every run document carries one verdict per rule checked, clean or not. Keep the reports (`--reports=<dir>`): they are the only archive.
 `rule-stats report --reports=<glob>` turns them into per-rule statistics. A retrospective
 uses them to flag globs matching no files, rules that never fire, and rules better moved
 into your own tooling.

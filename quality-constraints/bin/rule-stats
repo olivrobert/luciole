@@ -5,22 +5,23 @@
 //
 // Closes the loop: a report only ever lists violations, so "this rule has found nothing
 // in N runs" was uncomputable, and a useless semantic rule kept costing an LLM agent on
-// every run. Each report now carries a `json:constraints-run` block with one verdict per
+// every run. Each run now writes a `<run_ts>-constraints.json` document with one verdict per
 // rule; the retrospective's dated deliverable carries `json:constraints-annotations` for
-// verdicts revised after the fact. This command reads those blocks. Nothing else is stored.
+// verdicts revised after the fact. This command reads those. Nothing else is stored.
 //
 // Usage:
 //   rule-stats report --reports=<glob> [--reports=<glob>…] [--json]
 //                     [--min-runs=N] [--min-files=M] [--max-fp=K]
 //   rule-stats lint   --reports=<glob> [--reports=<glob>…] [--json]
-//        reports without a block, unreadable blocks, rules left without a verdict
+//        unreadable run documents, rules left without a verdict, markdown without a block
 //   rule-stats dead-globs [file|-]    # reads the output of match-constraints --sweep
 //
 // `--reports` is REQUIRED and repeatable (`--reports <glob>` also accepted). Where the
 // reports live is the project's business — several orchestrators, several layouts — so
 // the kit hardcodes nothing and there is no config file: the caller says where to look.
-// A directory value is read as `<dir>/**/*.md`. Shell-expanded paths after the command
-// work too.
+// A directory value is read as `<dir>/**/*-constraints.json` (the run documents only: a
+// report folder also holds their rendered .md). Shell-expanded paths after the command
+// work too. A `.json` path is a run document; any other path is read for annotation blocks.
 const fs = require('fs')
 const path = require('path')
 const rs = require('./lib/rule-stats.js')
@@ -53,12 +54,12 @@ function reportPatterns() {
 function loadReports() {
   const patterns = reportPatterns()
   if (!patterns.length) {
-    process.stderr.write(`rule-stats ${cmd}: no reports given — expected --reports=<glob> (repeatable), e.g. --reports='.claude/work-items/**/*-constraints.md'\n`)
+    process.stderr.write(`rule-stats ${cmd}: no reports given — expected --reports=<glob> (repeatable), e.g. --reports='.claude/work-items/**/*-constraints.json'\n`)
     process.exit(2)
   }
   const files = new Set()
   for (const p of patterns) {
-    const pat = fs.existsSync(p) && fs.statSync(p).isDirectory() ? path.join(p, '**', '*.md') : p
+    const pat = fs.existsSync(p) && fs.statSync(p).isDirectory() ? path.join(p, '**', '*-constraints.json') : p
     for (const f of fs.globSync(pat)) {
       if (fs.statSync(f).isFile()) files.add(f)
     }
@@ -126,7 +127,7 @@ function cmdReport() {
     return
   }
   if (!aggs.length) {
-    process.stdout.write(`rule-stats: ${reports.length} report(s) read, none carries a measurable block — no run recorded.\n`)
+    process.stdout.write(`rule-stats: ${reports.length} report(s) read, none carries a measurement — no run recorded.\n`)
     if (problems.length) process.stdout.write(`  (${problems.length} problem(s): run \`rule-stats lint\` on the same patterns)\n`)
     return
   }
@@ -139,7 +140,7 @@ function cmdReport() {
   for (const r of rowsOut) process.stdout.write(fmt(r) + '\n')
 
   process.stdout.write(`\nSource: ${reports.length} report(s)`)
-  if (noBlock.length) process.stdout.write(`, ${noBlock.length} without a measurement block (not counted)`)
+  if (noBlock.length) process.stdout.write(`, ${noBlock.length} markdown file(s) without an annotation block (not counted)`)
   process.stdout.write(`\nThresholds: ${opts.minRuns} runs, ${opts.minFiles} file observations, ${opts.maxFp} max FP\n`)
   const section = (title, list, render) => {
     if (!list.length) return
@@ -155,7 +156,7 @@ function cmdReport() {
   if (problems.length) {
     // Never silent: a rule left without a verdict is a measurement lost, and the fix is
     // in a report someone can still edit.
-    process.stdout.write(`\n⚠ ${problems.length} problem(s) in the blocks — run \`rule-stats lint\` on the same patterns\n`)
+    process.stdout.write(`\n⚠ ${problems.length} problem(s) in the measurements — run \`rule-stats lint\` on the same patterns\n`)
   }
 }
 
@@ -175,7 +176,7 @@ function cmdLint() {
   }
   for (const p of problems) process.stdout.write(`${p.path}:${p.line}: ${p.msg}\n`)
   if (noBlock.length) {
-    process.stdout.write(`\n${noBlock.length} report(s) without a measurement block (older format, not counted):\n`)
+    process.stdout.write(`\n${noBlock.length} markdown file(s) without an annotation block (not counted):\n`)
     for (const f of noBlock) process.stdout.write(`  - ${f}\n`)
   }
   process.stdout.write(`\n${reports.length} report(s), ${problems.length} problem(s), ${noBlock.length} without block\n`)

@@ -1,0 +1,9 @@
+#!/usr/bin/env node
+'use strict'
+
+import('./lib/constraint-check/render.mjs')
+  .then(({ run }) => run())
+  .catch((error) => {
+    process.stderr.write(`constraint-report: ${error.stack ?? error}\n`)
+    process.exit(2)
+  })
