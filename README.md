@@ -1,23 +1,55 @@
 <h1 align="center">Luciole</h1>
 
-Derive constraint files from an existing codebase and check changes against them.
+<p align="center"><strong>Turn your codebase's unwritten conventions into checks.</strong></p>
 
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Claude Code plugin](https://img.shields.io/badge/Claude_Code-plugin_marketplace-d97757.svg)](#quick-start)
-[![Stack-agnostic](https://img.shields.io/badge/stack-agnostic-success.svg)](#why)
+<p align="center">
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
+  <a href="#quick-start"><img alt="Claude Code plugin" src="https://img.shields.io/badge/Claude_Code-plugin_marketplace-d97757.svg"></a>
+  <a href="#how-it-works"><img alt="Stack-agnostic" src="https://img.shields.io/badge/stack-agnostic-success.svg"></a>
+</p>
 
-luciole uses coding agents to identify candidate conventions in a repository, scripts
-to measure their regex probes, and a review step to select rules for constraint files.
-You can then run checks against a diff, files, or a directory: scripts evaluate static rules,
-and agents assess semantic requirements. Verification records observations that can inform
-later rule changes.
+<p align="center"><img alt="constraint-check catching one static and two semantic violations in a diff" src="docs/demo.gif" width="800"></p>
 
-## Why
+Your linters check the language. They don't know that *your* controllers take the logged-in
+user as a `#[CurrentUser]` parameter instead of calling `$this->getUser()` (241 of 243 do),
+or that *your* event subscribers never save an aggregate themselves but dispatch a command
+(47 of 47). luciole reads your code, proposes those conventions as rules, measures them,
+lets you approve them — then checks every change against them. Excerpt from a real run on
+a Symfony project:
 
-Project conventions can be implicit or documented without a corresponding check. Examples
-include handlers returning the modified entity or controllers using `RoutePrefix::`
-constants. luciole provides a way to record and check such conventions alongside
-the project's existing linters and analysers.
+```markdown
+## Constraints Check: FAILED ❌
+
+Files checked: 13
+Static rules checked: 30 (0 tokens)
+Semantic rules checked: 33
+Violations found: 1
+Warnings: 2
+
+### Semantic Violations
+
+#### tests/Integration/Contract/Twig/ReminderEmailRenderingTest.php
+- **integration-test~86b2eaf3** (MUST): A service pulled from the container is narrowed with `\assert($x instanceof X)` before use
+  Narrowed with `self::assertInstanceOf(EmailRendererInterface::class, $renderer)`.
+  The repository has 220 narrowings through `\assert` against 9 through `assertInstanceOf`.
+```
+
+No linter ships that rule: luciole found it in the code, measured it, and you approved it.
+
+Static rules run as regex — no LLM, no tokens. Semantic rules are judged by Claude Code
+agents or by Jev. Every run is recorded, so rules that never fire or never match get flagged.
+
+```mermaid
+flowchart LR
+    A[Your codebase] -->|onboard| B[Constraint files<br/>you approve]
+    B -->|verify| C[Report on each diff]
+    C -->|retrospective| B
+    B -->|skills| D[Scaffolding skills<br/>for coding agents]
+```
+
+## How it works
+
+luciole runs alongside your existing linters and analysers, in three stages:
 
 - **Onboarding:** agents propose rules from a sample of files, scripts measure their regex
   probes across each scope's full file list, a review keeps or drops each rule.
@@ -220,7 +252,20 @@ express the proposed rules and investigates candidates that measurement could no
 
 ## The measurement loop
 
-Every run document carries one verdict per rule checked, clean or not. Keep the reports (`--reports=<dir>`): they are the only archive.
+Every run document carries one verdict per rule checked, clean or not — the `rules` array
+of the demo run above:
+
+```json
+"rules": [
+  { "rule": "controller#CTL-001", "kind": "static", "files": 1, "verdict": "pass", "hits": 0,
+    "text": "MUST have a #[Route] attribute" },
+  { "rule": "controller#CTL-002", "kind": "static", "files": 1, "verdict": "fail", "hits": 1,
+    "text": "MUST NOT flush the EntityManager: mutations go through the command bus" }
+]
+```
+
+A passing rule is recorded too: that is what lets a retrospective say "this rule found
+nothing in N runs". Keep the reports (`--reports=<dir>`): they are the only archive.
 `rule-stats report --reports=<glob>` turns them into per-rule statistics. A retrospective
 uses them to flag globs matching no files, rules that never fire, and rules better moved
 into your own tooling.
