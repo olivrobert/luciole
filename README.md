@@ -11,9 +11,9 @@
 <p align="center"><img alt="constraint-check catching one static and two semantic violations in a diff" src="docs/demo.gif" width="800"></p>
 
 Your linters check the language. They don't know that *your* controllers take the logged-in
-user as a `#[CurrentUser]` parameter instead of calling `$this->getUser()` (241 of 243 do),
-or that *your* event subscribers never save an aggregate themselves but dispatch a command
-(47 of 47). luciole reads your code, proposes those conventions as rules, measures them,
+user as a `#[CurrentUser]` parameter instead of calling `$this->getUser()`,
+or that *your* event subscribers never save an aggregate themselves but dispatch a command.
+luciole reads your code, proposes those conventions as rules, measures them,
 lets you approve them — then checks every change against them. Excerpt from a real run on
 a Symfony project:
 
