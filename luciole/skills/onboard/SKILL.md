@@ -1,9 +1,8 @@
 ---
 name: onboard
-description: Quality onboarding — runs the next step the state on disk calls for, a named step, or the full run — and a map of the pipeline, its artifacts, and the invariants that link them.
+description: Quality onboarding — runs the next step the state on disk calls for, a named step, or the full run — and a map of the pipeline, its artifacts, and the invariants that link them. Use when a project has no constraint files yet, or to resume an onboarding in progress.
 argument-hint: "[all | scope | generate | review-scope [slug] | render | skills]"
 allowed-tools: Read, Grep, Glob, Bash, Write, Edit, Task, Skill
-disable-model-invocation: true
 ---
 
 # Onboard
@@ -42,6 +41,8 @@ Plugin root: `${CLAUDE_PLUGIN_ROOT}`. The step files are read as plain files, so
 - **Anything else**: list the five steps and stop.
 
 A script that exits with an error **stops the run**. Moving on and hoping the gate catches it means wrong files get written first.
+
+When an agent invoked this skill rather than a human, nobody can answer the two human questions: the quality root (step `scope`, when `.luciole.env` is missing) and the final validation (step `render`, point 10). Never answer them yourself, never pick a default in the human's place, never run `approval.mjs approve`: stop at that question and return it, with the summary, to whoever invoked you. An approval only counts if a human gave it explicitly, in their own words.
 
 On a project with several scopes of 40+ files, do not use `all`: the review step saturates a single context (each slug chains a review and an application, and the 6→4 loop can need two passes). Call `/luciole:onboard` repeatedly instead, with a `/clear` between two calls: each one runs a single step, or a single slug of the review.
 

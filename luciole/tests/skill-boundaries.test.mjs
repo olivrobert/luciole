@@ -98,3 +98,12 @@ test('each step names the artifacts it depends on', () => {
   assert.match(read('render.md'), /approval\.mjs approve/, 'render does not record human approval')
   assert.match(read('skills.md'), /approval\.mjs check/, 'skills does not verify human approval')
 })
+
+// An agent can launch onboard, but a validation it gives itself attests nothing: the
+// approval hash would certify rules no human read.
+test('onboard can be invoked by an agent without approving in the human\'s place', () => {
+  const skill = readFileSync(join(ONBOARD, 'SKILL.md'), 'utf8')
+
+  assert.doesNotMatch(skill, /^disable-model-invocation: true$/m, 'onboard is hidden from agents again')
+  assert.match(skill, /never run `approval\.mjs approve`/, 'nothing stops an agent from approving its own rules')
+})
