@@ -13,6 +13,8 @@ then `.luciole.env`, defaulting to `.ia/quality`.
 
 Read-only orchestrator. Static checks, constraint matching and agent grouping are pre-computed by a script — you dispatch semantic checks and write the run document; code renders the report and the verdict. DETECTS and REPORTS only, never fixes: corrections are the caller's job.
 
+**One pass only.** Verify once, fix the reported violations, then stop: do not run verify again on the corrections, neither this skill nor the caller.
+
 ## Input
 
 **Raw arguments received:** $ARGUMENTS
@@ -71,7 +73,7 @@ Files to check:
 
 **No Agent tool? Inline everything, silently.** Do NOT call `ToolSearch`: it invalidates the prompt cache. Batch every Read for a group in a single message, work rule-by-rule, report in the same format. Expected degraded mode, not an anomaly.
 
-**Violation investigation is CAPPED at 2 operations total per violation** (Read or Bash). Rule text + offending line are sufficient grounds to report. If 2 operations don't settle it, report the violation with what you have — the fixer re-checks anyway.
+**Violation investigation is CAPPED at 2 operations total per violation** (Read or Bash). Rule text + offending line are sufficient grounds to report. If 2 operations don't settle it, report the violation with what you have — the fixer reads the code before changing it.
 
 ## Phase 3: Run document
 
