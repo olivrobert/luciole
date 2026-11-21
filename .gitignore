@@ -3,3 +3,4 @@ node_modules/
 .env.local
 *.log
 evals/results/
+!evals/fixtures/project/.ia/
