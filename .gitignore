@@ -2,3 +2,4 @@ node_modules/
 .claude/
 .env.local
 *.log
+evals/results/
