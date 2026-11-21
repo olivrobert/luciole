@@ -19,7 +19,10 @@
     "src/Fonds/Infrastructure/Symfony/Controller/Admin/Exemplaire/ListController.php",
     "src/Fonds/Domain/Model/Ouvrage.php",
     "src/Lecteur/Infrastructure/Symfony/Repository/AvisRepository.php",
-    "src/Lecteur/Infrastructure/Symfony/Controller/App/Pret/HistoriqueController.php"
+    "src/Lecteur/Infrastructure/Symfony/Controller/App/Pret/HistoriqueController.php",
+    "src/Lecteur/Domain/Model/Lecteur.php",
+    "src/Fonds/Infrastructure/Symfony/Repository/OuvrageRepository.php",
+    "src/Editeur/Domain/Model/Editeur.php"
   ],
   "violations": [
     { "file": "src/Fonds/Application/Message/Command/Exemplaire/RetirerExemplaire/RetirerExemplaireHandler.php", "constraint": "handler", "rule": "DispatchAfterCurrentBusStamp", "level": "obvious", "why": "événement dispatché sans enveloppe" },
@@ -40,7 +43,11 @@
     { "file": "src/Editeur/Infrastructure/Symfony/Repository/CorrespondantRepository.php", "constraint": "repository", "rule": "[] === $param", "level": "obvious", "why": "findVisiblesByEditeurIds() sans garde tableau vide" },
     { "file": "src/Fonds/Domain/Model/Ouvrage.php", "constraint": "entity", "rule": "JoinColumn] portant sa nullabilité", "level": "subtle", "why": "JoinColumn présent mais sans nullable" },
     { "file": "src/Lecteur/Infrastructure/Symfony/Repository/AvisRepository.php", "constraint": "repository", "rule": "réactivée dans un finally", "level": "subtle", "why": "enable('softdeleteable') après la requête, hors finally" },
-    { "file": "src/Lecteur/Infrastructure/Symfony/Controller/App/Pret/HistoriqueController.php", "constraint": "controller", "rule": "dossier du host", "level": "subtle", "why": "contrôleur App qui rend un template admin/" }
+    { "file": "src/Lecteur/Infrastructure/Symfony/Controller/App/Pret/HistoriqueController.php", "constraint": "controller", "rule": "dossier du host", "level": "subtle", "why": "contrôleur App qui rend un template admin/" },
+    { "file": "src/Lecteur/Domain/Model/Lecteur.php", "constraint": "entity", "rule": "VO Telephone", "level": "subtle", "why": "fichier long : $telephoneResponsableLegal typé ?string, parmi 30 propriétés" },
+    { "file": "src/Lecteur/Domain/Model/Lecteur.php", "constraint": "entity", "rule": "\\LogicException", "level": "subtle", "why": "fichier long : suspendre() (ligne 372) change le statut sans garde, les 7 autres transitions en ont une" },
+    { "file": "src/Fonds/Infrastructure/Symfony/Repository/OuvrageRepository.php", "constraint": "repository", "rule": "[] === $param", "level": "subtle", "why": "fichier long : findGroupedByAuteurIds() (ligne 341) sans garde, les 3 autres méthodes IN en ont une" },
+    { "file": "src/Editeur/Domain/Model/Editeur.php", "constraint": "entity", "rule": "targetEntity en premier argument", "level": "subtle", "why": "fichier long : ManyToOne Region avec inversedBy avant targetEntity" }
   ],
   "traps": {
     "src/Lecteur/Application/Message/Command/FavoriOuvrage/ToggleFavoriOuvrage/ToggleFavoriOuvrageHandler.php": "conforme : command.bus autowiré pour re-dispatcher, exception Domain",
@@ -48,6 +55,8 @@
     "src/SharedKernel/Infrastructure/Symfony/Repository/LangueRepository.php": "conforme : listable avec les deux traits, garde tableau vide",
     "src/Fonds/Infrastructure/Symfony/Controller/Admin/Exemplaire/ListController.php": "conforme : formulaire de filtre sans Dto, donc pas d'assertValid attendu",
     "src/Fonds/Domain/Model/Ouvrage.php": "piège partiel : columnPrefix: false est valide",
-    "src/Lecteur/Infrastructure/Symfony/Repository/AvisRepository.php": "piège partiel : findByCriteres(array) n'alimente pas un IN, pas de garde attendue"
+    "src/Lecteur/Infrastructure/Symfony/Repository/AvisRepository.php": "piège partiel : findByCriteres(array) n'alimente pas un IN, pas de garde attendue",
+    "src/Fonds/Infrastructure/Symfony/Repository/OuvrageRepository.php": "piège partiel : softdeleteable réactivé dans un finally, rechercher(array) sans IN",
+    "src/Editeur/Domain/Model/Editeur.php": "piège partiel : SoftDeleteableTrait avec l'attribut Gedmo attendu, transitions toutes gardées"
   }
 }
