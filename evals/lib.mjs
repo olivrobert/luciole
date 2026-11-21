@@ -1,6 +1,6 @@
 const MODEL_SHORTCUTS = new Set(['haiku', 'sonnet', 'opus'])
 
-export const DEFAULT_CONFIGS = 'haiku,sonnet,jev'
+export const DEFAULT_CONFIGS = 'haiku,sonnet'
 
 export function parseConfigs(spec) {
   return spec.split(',').map((s) => s.trim()).filter(Boolean).map((raw) => {
@@ -39,7 +39,7 @@ export function mustCells(matched) {
 
 // `rule` is a substring of the rule text: readable in expected.json, and checked unique here.
 export function resolveExpected(expected, matched) {
-  const keys = new Set()
+  const keys = new Map()
   for (const v of expected.violations) {
     const rules = matched.constraints?.[v.constraint]?.semantic_rules ?? []
     const hits = rules.filter((text) => text.includes(v.rule))
@@ -48,7 +48,7 @@ export function resolveExpected(expected, matched) {
     if (!(matched.constraints[v.constraint].files ?? []).includes(v.file)) {
       throw new Error(`expected.json: ${v.file} is not in the scope of ${v.constraint}`)
     }
-    keys.add(cellKey(v.file, v.constraint, hits[0]))
+    keys.set(cellKey(v.file, v.constraint, hits[0]), v.level ?? 'obvious')
   }
   return keys
 }
@@ -103,12 +103,14 @@ export function jevPredictions(doc) {
   return predictions
 }
 
+// `expected` maps each expected cell to its level (obvious or subtle).
 export function score(predicted, expected, universe) {
   const p = new Set(predicted)
   const tp = [...p].filter((k) => expected.has(k))
   const fp = [...p].filter((k) => !expected.has(k))
-  const fn = [...expected].filter((k) => universe.has(k) && !p.has(k))
-  return { tp: tp.length, fp, fn }
+  const fn = [...expected.keys()].filter((k) => universe.has(k) && !p.has(k))
+  const subtle = (k) => expected.get(k) === 'subtle'
+  return { tp: tp.length, fp, fn, tpSubtle: tp.filter(subtle).length, fnSubtle: fn.filter(subtle).length }
 }
 
 const pct = (num, den) => (den === 0 ? '—' : `${Math.round((100 * num) / den)} %`)
@@ -117,8 +119,10 @@ export function summarize(runs) {
   const rows = new Map()
   for (const run of runs) {
     const id = `${run.config}\t${run.size}`
-    const row = rows.get(id) ?? { config: run.config, size: run.size, tp: 0, fp: 0, fn: 0, cost: 0, costKnown: true, durations: [], calls: 0, errors: 0, reps: new Set() }
+    const row = rows.get(id) ?? { config: run.config, size: run.size, tp: 0, fp: 0, fn: 0, tpSubtle: 0, fnSubtle: 0, cost: 0, costKnown: true, durations: [], calls: 0, errors: 0, reps: new Set() }
     row.tp += run.score.tp
+    row.tpSubtle += run.score.tpSubtle
+    row.fnSubtle += run.score.fnSubtle
     row.fp += run.score.fp.length
     row.fn += run.score.fn.length
     row.calls += run.calls
@@ -134,13 +138,13 @@ export function summarize(runs) {
 
 export function renderTable(rows) {
   const lines = [
-    '| taille | config | précision | rappel | VP | FP | FN | coût / campagne | durée moy. / lot | appels | erreurs |',
-    '|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|',
+    '| taille | config | précision | rappel | rappel subtil | VP | FP | FN | coût / campagne | durée moy. / lot | appels | erreurs |',
+    '|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|',
   ]
   for (const r of rows) {
     const cost = r.costKnown ? `$${(r.cost / r.reps.size).toFixed(3)}` : '—'
     const avg = r.durations.reduce((a, b) => a + b, 0) / r.durations.length
-    lines.push(`| ${r.size} | ${r.config} | ${pct(r.tp, r.tp + r.fp)} | ${pct(r.tp, r.tp + r.fn)} | ${r.tp} | ${r.fp} | ${r.fn} | ${cost} | ${(avg / 1000).toFixed(1)} s | ${r.calls} | ${r.errors} |`)
+    lines.push(`| ${r.size} | ${r.config} | ${pct(r.tp, r.tp + r.fp)} | ${pct(r.tp, r.tp + r.fn)} | ${pct(r.tpSubtle, r.tpSubtle + r.fnSubtle)} | ${r.tp} | ${r.fp} | ${r.fn} | ${cost} | ${(avg / 1000).toFixed(1)} s | ${r.calls} | ${r.errors} |`)
   }
   return lines.join('\n')
 }

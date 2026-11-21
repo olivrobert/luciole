@@ -26,6 +26,7 @@ Mesure le jugement sémantique de luciole sur les fixtures de evals/fixtures,
 contre expected.json, par taille de lot, modèle et moteur.
 
   --configs=<list>     haiku, sonnet, opus, agent:<model>, jev, jev:<model> (défaut : ${DEFAULT_CONFIGS})
+                       jev juge un fichier par requête : --sizes=1 suffit pour lui
   --sizes=<list>       tailles de lot (défaut : 1,2,5,10)
   --repeat=<n>         répétitions par cellule (défaut : 3)
   --concurrency=<n>    lots évalués en parallèle (défaut : 4)
@@ -156,7 +157,7 @@ async function main() {
       const started = Date.now()
       const result = p.config.engine === 'agent' ? await evalAgent(cwd, p.lot, p.config) : await evalJev(cwd, p.lot, p.config)
       const universe = mustCells(match(cwd, p.lot))
-      const lotExpected = new Set([...expected].filter((k) => universe.has(k)))
+      const lotExpected = new Map([...expected].filter(([k]) => universe.has(k)))
       process.stderr.write('.')
       return {
         config: p.config.label, size: p.size, rep: p.rep, lot: p.lot,

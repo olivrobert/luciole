@@ -1,27 +1,53 @@
 {
   "files": [
     "src/Fonds/Application/Message/Command/Exemplaire/RetirerExemplaire/RetirerExemplaireHandler.php",
+    "src/Editeur/Application/Message/Command/Admin/RefuserEditeur/RefuserEditeurHandler.php",
+    "src/Editeur/Application/Message/Command/DeleteCorrespondant/DeleteCorrespondantHandler.php",
+    "src/Lecteur/Application/Message/Command/FavoriOuvrage/ToggleFavoriOuvrage/ToggleFavoriOuvrageHandler.php",
+    "src/Fonds/Application/Message/Command/Ouvrage/PublierOuvrage/PublierOuvrageHandler.php",
+    "src/Lecteur/Application/Message/Command/ArchiverLecteur/ArchiverLecteurHandler.php",
+    "src/Mediatheque/Application/Message/Command/Admin/ValiderMediatheque/ValiderMediathequeHandler.php",
+    "src/Fonds/Application/Message/Query/GetOuvrage/GetOuvrageHandler.php",
+    "src/Fonds/Application/Message/Command/Notice/ImporterNotice/ImporterNoticeHandler.php",
+    "src/Lecteur/Application/Message/Command/Pret/EmprunterExemplaireHandler.php",
     "src/Fonds/Infrastructure/Symfony/Controller/App/Ouvrage/EditController.php",
     "src/Mediatheque/Domain/Model/Mediatheque.php",
     "src/SharedKernel/Infrastructure/Symfony/Repository/LangueRepository.php",
-    "src/Editeur/Application/Message/Command/Admin/RefuserEditeur/RefuserEditeurHandler.php",
-    "src/Editeur/Application/Message/Command/DeleteCorrespondant/DeleteCorrespondantHandler.php",
     "src/Mediatheque/Infrastructure/Symfony/Controller/Public/Inscription/InscriptionController.php",
     "src/Fonds/Domain/Model/Exemplaire.php",
     "src/Editeur/Infrastructure/Symfony/Repository/CorrespondantRepository.php",
-    "src/Lecteur/Application/Message/Command/FavoriOuvrage/ToggleFavoriOuvrage/ToggleFavoriOuvrageHandler.php"
+    "src/Fonds/Infrastructure/Symfony/Controller/Admin/Exemplaire/ListController.php",
+    "src/Fonds/Domain/Model/Ouvrage.php",
+    "src/Lecteur/Infrastructure/Symfony/Repository/AvisRepository.php",
+    "src/Lecteur/Infrastructure/Symfony/Controller/App/Pret/HistoriqueController.php"
   ],
   "violations": [
-    { "file": "src/Fonds/Application/Message/Command/Exemplaire/RetirerExemplaire/RetirerExemplaireHandler.php", "constraint": "handler", "rule": "DispatchAfterCurrentBusStamp", "why": "événement dispatché sans enveloppe" },
-    { "file": "src/Fonds/Infrastructure/Symfony/Controller/App/Ouvrage/EditController.php", "constraint": "controller", "rule": "assertValid()", "why": "dispatch sans $dto->assertValid()" },
-    { "file": "src/Fonds/Infrastructure/Symfony/Controller/App/Ouvrage/EditController.php", "constraint": "controller", "rule": "#[IsGranted]", "why": "denyAccessUnlessGranted() au lieu de l'attribut" },
-    { "file": "src/Mediatheque/Domain/Model/Mediatheque.php", "constraint": "entity", "rule": "public private(set)", "why": "$utilisateur privé exposé par getUtilisateur()" },
-    { "file": "src/Mediatheque/Domain/Model/Mediatheque.php", "constraint": "entity", "rule": "\\LogicException", "why": "reactiver() change le statut sans garde" },
-    { "file": "src/Editeur/Application/Message/Command/Admin/RefuserEditeur/RefuserEditeurHandler.php", "constraint": "handler", "rule": "attribut Autowire", "why": "$eventBus injecté sans #[Autowire]" },
-    { "file": "src/Editeur/Application/Message/Command/Admin/RefuserEditeur/RefuserEditeurHandler.php", "constraint": "handler", "rule": "$command, $query ou $event", "why": "paramètre __invoke nommé $message" },
-    { "file": "src/Editeur/Application/Message/Command/DeleteCorrespondant/DeleteCorrespondantHandler.php", "constraint": "handler", "rule": "Domain\\Exception", "why": "précondition métier levée en \\RuntimeException" },
-    { "file": "src/Mediatheque/Infrastructure/Symfony/Controller/Public/Inscription/InscriptionController.php", "constraint": "controller", "rule": "$commandBus ou $queryBus", "why": "MessageBusInterface nommé $bus" },
-    { "file": "src/Fonds/Domain/Model/Exemplaire.php", "constraint": "entity", "rule": "columnPrefix", "why": "#[ORM\\Embedded] sans columnPrefix" },
-    { "file": "src/Editeur/Infrastructure/Symfony/Repository/CorrespondantRepository.php", "constraint": "repository", "rule": "[] === $param", "why": "findVisiblesByEditeurIds() sans garde tableau vide" }
-  ]
+    { "file": "src/Fonds/Application/Message/Command/Exemplaire/RetirerExemplaire/RetirerExemplaireHandler.php", "constraint": "handler", "rule": "DispatchAfterCurrentBusStamp", "level": "obvious", "why": "événement dispatché sans enveloppe" },
+    { "file": "src/Editeur/Application/Message/Command/Admin/RefuserEditeur/RefuserEditeurHandler.php", "constraint": "handler", "rule": "attribut Autowire", "level": "obvious", "why": "$eventBus injecté sans #[Autowire]" },
+    { "file": "src/Editeur/Application/Message/Command/Admin/RefuserEditeur/RefuserEditeurHandler.php", "constraint": "handler", "rule": "$command, $query ou $event", "level": "obvious", "why": "paramètre __invoke nommé $message" },
+    { "file": "src/Editeur/Application/Message/Command/DeleteCorrespondant/DeleteCorrespondantHandler.php", "constraint": "handler", "rule": "Domain\\Exception", "level": "obvious", "why": "précondition métier levée en \\RuntimeException" },
+    { "file": "src/Fonds/Application/Message/Command/Ouvrage/PublierOuvrage/PublierOuvrageHandler.php", "constraint": "handler", "rule": "DispatchAfterCurrentBusStamp", "level": "subtle", "why": "le second dispatch (dans la boucle) crée une Envelope sans stamp, le premier est conforme" },
+    { "file": "src/Lecteur/Application/Message/Command/ArchiverLecteur/ArchiverLecteurHandler.php", "constraint": "handler", "rule": "toute méthode d'appui est privée", "level": "subtle", "why": "notifier() est public" },
+    { "file": "src/Fonds/Application/Message/Query/GetOuvrage/GetOuvrageHandler.php", "constraint": "handler", "rule": "nomme explicitement le bus de la famille", "level": "subtle", "why": "handler de Query déclaré sur command.bus" },
+    { "file": "src/Fonds/Application/Message/Command/Notice/ImporterNotice/ImporterNoticeHandler.php", "constraint": "handler", "rule": "rétrécie par \\assert", "level": "subtle", "why": "getId() rétréci par if + throw \\LogicException au lieu de \\assert" },
+    { "file": "src/Lecteur/Application/Message/Command/Pret/EmprunterExemplaireHandler.php", "constraint": "handler", "rule": "partage le dossier de son message", "level": "subtle", "why": "namespace Pret, message importé d'un autre dossier" },
+    { "file": "src/Fonds/Infrastructure/Symfony/Controller/App/Ouvrage/EditController.php", "constraint": "controller", "rule": "assertValid()", "level": "obvious", "why": "dispatch sans $dto->assertValid()" },
+    { "file": "src/Fonds/Infrastructure/Symfony/Controller/App/Ouvrage/EditController.php", "constraint": "controller", "rule": "#[IsGranted]", "level": "obvious", "why": "denyAccessUnlessGranted() au lieu de l'attribut" },
+    { "file": "src/Mediatheque/Domain/Model/Mediatheque.php", "constraint": "entity", "rule": "public private(set)", "level": "subtle", "why": "$utilisateur privé exposé par getUtilisateur()" },
+    { "file": "src/Mediatheque/Domain/Model/Mediatheque.php", "constraint": "entity", "rule": "\\LogicException", "level": "subtle", "why": "reactiver() change le statut sans garde, les trois autres transitions en ont une" },
+    { "file": "src/Mediatheque/Infrastructure/Symfony/Controller/Public/Inscription/InscriptionController.php", "constraint": "controller", "rule": "$commandBus ou $queryBus", "level": "obvious", "why": "MessageBusInterface nommé $bus" },
+    { "file": "src/Fonds/Domain/Model/Exemplaire.php", "constraint": "entity", "rule": "columnPrefix", "level": "obvious", "why": "#[ORM\\Embedded] sans columnPrefix" },
+    { "file": "src/Editeur/Infrastructure/Symfony/Repository/CorrespondantRepository.php", "constraint": "repository", "rule": "[] === $param", "level": "obvious", "why": "findVisiblesByEditeurIds() sans garde tableau vide" },
+    { "file": "src/Fonds/Domain/Model/Ouvrage.php", "constraint": "entity", "rule": "JoinColumn] portant sa nullabilité", "level": "subtle", "why": "JoinColumn présent mais sans nullable" },
+    { "file": "src/Lecteur/Infrastructure/Symfony/Repository/AvisRepository.php", "constraint": "repository", "rule": "réactivée dans un finally", "level": "subtle", "why": "enable('softdeleteable') après la requête, hors finally" },
+    { "file": "src/Lecteur/Infrastructure/Symfony/Controller/App/Pret/HistoriqueController.php", "constraint": "controller", "rule": "dossier du host", "level": "subtle", "why": "contrôleur App qui rend un template admin/" }
+  ],
+  "traps": {
+    "src/Lecteur/Application/Message/Command/FavoriOuvrage/ToggleFavoriOuvrage/ToggleFavoriOuvrageHandler.php": "conforme : command.bus autowiré pour re-dispatcher, exception Domain",
+    "src/Mediatheque/Application/Message/Command/Admin/ValiderMediatheque/ValiderMediathequeHandler.php": "conforme : méthode d'appui privée, deux bus autowirés, envelope stampée construite en variable",
+    "src/SharedKernel/Infrastructure/Symfony/Repository/LangueRepository.php": "conforme : listable avec les deux traits, garde tableau vide",
+    "src/Fonds/Infrastructure/Symfony/Controller/Admin/Exemplaire/ListController.php": "conforme : formulaire de filtre sans Dto, donc pas d'assertValid attendu",
+    "src/Fonds/Domain/Model/Ouvrage.php": "piège partiel : columnPrefix: false est valide",
+    "src/Lecteur/Infrastructure/Symfony/Repository/AvisRepository.php": "piège partiel : findByCriteres(array) n'alimente pas un IN, pas de garde attendue"
+  }
 }

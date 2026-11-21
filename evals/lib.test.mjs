@@ -53,9 +53,9 @@ test('jevPredictions maps violation ids to MUST rule texts', () => {
 })
 
 test('score separates true positives, false positives and misses within the lot', () => {
-  const expected = new Set(['a', 'b'])
+  const expected = new Map([['a', 'obvious'], ['b', 'subtle'], ['d', 'subtle']])
   const result = score(['a', 'c'], expected, new Set(['a', 'b', 'c']))
-  assert.deepEqual(result, { tp: 1, fp: ['c'], fn: ['b'] })
+  assert.deepEqual(result, { tp: 1, fp: ['c'], fn: ['b'], tpSubtle: 0, fnSubtle: 1 })
 })
 
 test('expected.json resolves every violation to one MUST rule of the fixtures', () => {
@@ -69,7 +69,8 @@ test('expected.json resolves every violation to one MUST rule of the fixtures', 
     const keys = resolveExpected(expected, matched)
     assert.equal(keys.size, expected.violations.length)
     const cells = mustCells(matched)
-    for (const key of keys) assert.ok(cells.has(key))
+    for (const key of keys.keys()) assert.ok(cells.has(key))
+    for (const file of Object.keys(expected.traps)) assert.ok(expected.files.includes(file), file)
     for (const c of Object.values(matched.constraints)) assert.deepEqual(c.static_violations ?? [], [])
   } finally {
     rmSync(dir, { recursive: true, force: true })
