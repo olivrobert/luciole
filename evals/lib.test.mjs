@@ -13,7 +13,7 @@ const EVALS = dirname(fileURLToPath(import.meta.url))
 const group = {
   constraints: ['handler'],
   files: ['src/A/Application/Message/Command/X/XHandler.php'],
-  rules: ['#1 [handler] MUST: La classe est readonly.', '#2 [handler] SHOULD: Un détail.'],
+  rules: ['#1 [handler] MUST: The class is readonly.', '#2 [handler] SHOULD: A detail.'],
 }
 
 test('parseConfigs maps shortcuts and engines', () => {
@@ -31,16 +31,16 @@ test('parseCheckerResult keeps MUST violations and resolves reported paths', () 
   const text = [
     '```constraint-result', 'constraint: handler', 'files_checked: 1', '', 'COVERAGE:', '- XHandler.php: 2 rules checked — 2 FAIL, 0 N/A', '',
     'VIOLATIONS:',
-    '- /tmp/x/src/A/Application/Message/Command/X/XHandler.php:12 #1 (MUST): pas readonly',
-    '- XHandler.php:3 #2 (SHOULD): détail', '', 'status: FAIL', 'violations: 2', '```',
+    '- /tmp/x/src/A/Application/Message/Command/X/XHandler.php:12 #1 (MUST): not readonly',
+    '- XHandler.php:3 #2 (SHOULD): detail', '', 'status: FAIL', 'violations: 2', '```',
   ].join('\n')
   const { predictions, error } = parseCheckerResult(text, group)
   assert.equal(error, null)
-  assert.deepEqual(predictions, [cellKey(group.files[0], 'handler', 'MUST: La classe est readonly.')])
+  assert.deepEqual(predictions, [cellKey(group.files[0], 'handler', 'MUST: The class is readonly.')])
 })
 
 test('parseCheckerResult flags a missing or ERROR status', () => {
-  assert.match(parseCheckerResult('rien', group).error, /no constraint-result/)
+  assert.match(parseCheckerResult('nothing', group).error, /no constraint-result/)
   assert.match(parseCheckerResult('VIOLATIONS:\nstatus: ERROR', group).error, /ERROR/)
 })
 

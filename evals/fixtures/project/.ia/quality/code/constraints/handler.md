@@ -3,19 +3,19 @@ paths:
   - "src/*/Application/Message/**/*Handler.php"
 ---
 
-# Constraints — Handlers Messenger (CQRS)
+# Constraints — Messenger handlers (CQRS)
 
-Scope: `src/*/Application/Message/**/*Handler.php` carrying `classe finale readonly suffixée Handler avec #[AsMessageHandler], unique méthode __invoke`.
+Scope: `src/*/Application/Message/**/*Handler.php` carrying `final readonly class suffixed Handler with #[AsMessageHandler], a single __invoke method`.
 
 ## Semantic Rules
 
-- MUST: L'attribut AsMessageHandler nomme explicitement le bus de la famille du message (command.bus, query.bus, event.bus). Trigger: déclaration de la classe handler. Anchor: #[AsMessageHandler(bus: '<famille>.bus')] au niveau de la classe, la famille correspondant au segment Message/Command, Message/Query ou Message/Event du chemin. (69/69)
-- MUST: La classe handler est déclarée readonly. Trigger: déclaration de la classe handler. Anchor: mot-clé readonly devant class, sur la ligne de déclaration. (65/69)
-- MUST: Le handler n'expose que __invoke : toute méthode d'appui est privée. Trigger: handler comportant des méthodes d'appui en plus de __invoke. Anchor: visibilité private sur toute méthode autre que __construct et __invoke. (69/69)
-- MUST: Un MessageBusInterface injecté est désigné par un attribut Autowire nommant le bus. Trigger: constructeur recevant un MessageBusInterface. Anchor: #[Autowire(service: 'event.bus')] ou #[Autowire(service: 'query.bus')] au-dessus du paramètre promu. (18/18)
-- MUST: Un événement publié depuis un handler est enveloppé avec un DispatchAfterCurrentBusStamp. Trigger: appel à $this->eventBus->dispatch(). Anchor: (new Envelope($event))->with(new DispatchAfterCurrentBusStamp()). (15/15)
-- MUST NOT: Le handler ne dépend pas de l'EntityManager : la persistance passe par une interface de repository du Domain. Trigger: handler qui persiste ou supprime un agrégat. Anchor: un paramètre constructeur typé <Contexte>\Domain\Repository\...RepositoryInterface, et aucun import de Doctrine\ORM. (68/69)
-- MUST: Le paramètre de __invoke est nommé d'après la famille du message : $command, $query ou $event. Trigger: signature de __invoke. Anchor: nom du paramètre unique de __invoke. — coherence, non-blocking (69/69)
-- MUST: Une valeur nullable garantie par le contexte est rétrécie par \assert, pas par une exception technique. Trigger: lecture d'un identifiant nullable (getId()) dont le handler sait qu'il est renseigné. Anchor: \assert(null !== $x); immédiatement après l'affectation. (11/12)
-- MUST: Une précondition métier non satisfaite lève une exception du namespace Domain\Exception du contexte. Trigger: handler qui refuse un message pour une raison métier (doublon, fiche incomplète…). Anchor: import et levée d'une classe <Contexte>\Domain\Exception\...Exception. (9/9)
-- MUST: Le handler partage le dossier de son message, dossier nommé d'après ce message. Trigger: création d'un nouveau cas d'usage (message + handler). Anchor: namespace se terminant par le nom du message, et paramètre de __invoke typé par ce message sans import. — coherence, non-blocking (66/69)
+- MUST: The AsMessageHandler attribute explicitly names the bus of the message family (command.bus, query.bus, event.bus). Trigger: handler class declaration. Anchor: #[AsMessageHandler(bus: '<family>.bus')] on the class, the family matching the Message/Command, Message/Query or Message/Event segment of the path. (69/69)
+- MUST: The handler class is declared readonly. Trigger: handler class declaration. Anchor: readonly keyword before class, on the declaration line. (65/69)
+- MUST: The handler only exposes __invoke: every helper method is private. Trigger: handler with helper methods besides __invoke. Anchor: private visibility on every method other than __construct and __invoke. (69/69)
+- MUST: An injected MessageBusInterface is designated by an Autowire attribute naming the bus. Trigger: constructor receiving a MessageBusInterface. Anchor: #[Autowire(service: 'event.bus')] or #[Autowire(service: 'query.bus')] above the promoted parameter. (18/18)
+- MUST: An event published from a handler is wrapped with a DispatchAfterCurrentBusStamp. Trigger: call to $this->eventBus->dispatch(). Anchor: (new Envelope($event))->with(new DispatchAfterCurrentBusStamp()). (15/15)
+- MUST NOT: The handler does not depend on the EntityManager: persistence goes through a Domain repository interface. Trigger: handler that persists or removes an aggregate. Anchor: a constructor parameter typed <Context>\Domain\Repository\...RepositoryInterface, and no import of Doctrine\ORM. (68/69)
+- MUST: The __invoke parameter is named after the message family: $command, $query or $event. Trigger: __invoke signature. Anchor: name of the single __invoke parameter. — coherence, non-blocking (69/69)
+- MUST: A nullable value guaranteed by the context is narrowed with \assert, not with a technical exception. Trigger: reading a nullable identifier (getId()) the handler knows is set. Anchor: \assert(null !== $x); right after the assignment. (11/12)
+- MUST: An unmet business precondition throws an exception from the context's Domain\Exception namespace. Trigger: handler rejecting a message for a business reason (duplicate, incomplete record…). Anchor: import and throw of a <Context>\Domain\Exception\...Exception class. (9/9)
+- MUST: The handler shares its message's folder, a folder named after that message. Trigger: creation of a new use case (message + handler). Anchor: namespace ending with the message name, and __invoke parameter typed by that message without an import. — coherence, non-blocking (66/69)

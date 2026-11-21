@@ -8,8 +8,9 @@ pnpm eval                                        # haiku, sonnet × lots of 1/2/
 pnpm eval --configs=haiku,agent:claude-sonnet-5-5 --sizes=1,10 --repeat=1
 ```
 
-- `fixtures/project/`: an anonymised Symfony project (4 constraint files, 20 PHP files). Frozen: the
-  eval owns this code. The 10 handlers come first, so a lot of 10 is one checker call on 10 files.
+- `fixtures/project/`: an anonymised Symfony project, a fictional library (4 constraint files,
+  23 PHP files, 3 of them over 400 lines). Frozen: the eval owns this code. The 10 handlers come
+  first, so a lot of 10 is one checker call on 10 files.
 - `fixtures/expected.json`: the violations seeded in the fixtures (`rule` is a unique substring of
   the rule text, `level` is `obvious` or `subtle`), and `traps`: compliant code that looks wrong.
   Any MUST rule not listed is expected to pass. `pnpm test` checks every entry resolves.

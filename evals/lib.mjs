@@ -138,7 +138,7 @@ export function summarize(runs) {
 
 export function renderTable(rows) {
   const lines = [
-    '| taille | config | précision | rappel | rappel subtil | VP | FP | FN | coût / campagne | durée moy. / lot | appels | erreurs |',
+    '| lot size | config | precision | recall | subtle recall | TP | FP | FN | cost / run | avg time / lot | calls | errors |',
     '|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|',
   ]
   for (const r of rows) {
@@ -159,10 +159,10 @@ export function renderMisses(runs) {
       }
     }
   }
-  if (count.size === 0) return '_Aucune erreur de jugement._'
+  if (count.size === 0) return '_No judgment error._'
   return [...count.entries()].sort().map(([id, n]) => {
     const [config, size, kind, ...rest] = id.split('\t')
     const { file, constraint, text } = splitKey(rest.join('\t'))
-    return `- ${kind} ×${n} · ${config} · lot ${size} · \`${file}\` · [${constraint}] ${text.slice(0, 90)}`
+    return `- ${kind} ×${n} · ${config} · lot of ${size} · \`${file}\` · [${constraint}] ${text.slice(0, 90)}`
   }).join('\n')
 }

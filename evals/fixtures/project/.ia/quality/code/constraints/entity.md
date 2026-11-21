@@ -6,26 +6,26 @@ exclude:
   - "**/*Interface.php"
 ---
 
-# Constraints — Entités Doctrine
+# Constraints — Doctrine entities
 
-Scope: `src/*/Domain/Model/*.php` carrying `classe du namespace Domain\Model mappée par attributs Doctrine (#[ORM\Entity] ou #[ORM\Embeddable])`.
+Scope: `src/*/Domain/Model/*.php` carrying `class of the Domain\Model namespace mapped by Doctrine attributes (#[ORM\Entity] or #[ORM\Embeddable])`.
 
 ## Static Rules
 
 ```rules
-ENT-001 | present | #\[ORM\\Table\(name: '[a-z0-9_]+'\)\] | MUST Une entité nomme explicitement sa table en snake_case | gate=#\[ORM\\Entity
-ENT-002 | absent | #\[ORM\\Entity\(repositoryClass | MUST NOT Une entité ne déclare pas de repositoryClass dans son attribut ORM | gate=#\[ORM\\Entity
-ENT-003 | present | ^\s+use IdentityTrait; | MUST Une entité tient son identifiant de IdentityTrait plutôt que d'une propriété #[ORM\Id] locale | gate=#\[ORM\\Entity
-ENT-012 | absent | #\[ORM\\UniqueConstraint\((?!name: ') | MUST Une contrainte d'unicité de classe porte un nom explicite | gate=#\[ORM\\UniqueConstraint\(
-ENT-013 | absent | (public|private|protected)[^(]*\$(createdAt|updatedAt)\b | MUST NOT Une entité ne déclare pas ses propres colonnes createdAt/updatedAt : elles viennent de TimestampableTrait | gate=#\[ORM\\Entity
+ENT-001 | present | #\[ORM\\Table\(name: '[a-z0-9_]+'\)\] | MUST An entity explicitly names its table in snake_case | gate=#\[ORM\\Entity
+ENT-002 | absent | #\[ORM\\Entity\(repositoryClass | MUST NOT An entity does not declare a repositoryClass in its ORM attribute | gate=#\[ORM\\Entity
+ENT-003 | present | ^\s+use IdentityTrait; | MUST An entity gets its identifier from IdentityTrait rather than from a local #[ORM\Id] property | gate=#\[ORM\\Entity
+ENT-012 | absent | #\[ORM\\UniqueConstraint\((?!name: ') | MUST A class-level unique constraint carries an explicit name | gate=#\[ORM\\UniqueConstraint\(
+ENT-013 | absent | (public|private|protected)[^(]*\$(createdAt|updatedAt)\b | MUST NOT An entity does not declare its own createdAt/updatedAt columns: they come from TimestampableTrait | gate=#\[ORM\\Entity
 ```
 
 ## Semantic Rules
 
-- MUST: Une entité qui utilise SoftDeleteableTrait déclare l'attribut Gedmo\SoftDeleteable sur deletedAt. Trigger: entité composée avec SoftDeleteableTrait. Anchor: #[Gedmo\SoftDeleteable(fieldName: 'deletedAt', timeAware: false, hardDelete: false)] au niveau de la classe. (3/3)
-- MUST: Une propriété mappée lisible de l'extérieur est déclarée public private(set), sans getter. Trigger: propriété mappée d'une entité consommée hors de l'entité. Anchor: modificateur public private(set) sur la déclaration de propriété. (15/16)
-- MUST: Un #[ORM\Embedded] fixe explicitement son columnPrefix. Trigger: propriété mappée par #[ORM\Embedded]. Anchor: argument columnPrefix (false ou préfixe snake_case) dans l'attribut Embedded. (4/4)
-- MUST: Une association ManyToOne déclare un #[ORM\JoinColumn] portant sa nullabilité. Trigger: propriété annotée #[ORM\ManyToOne]. Anchor: #[ORM\JoinColumn(nullable: ...)] sur la ligne suivante. (8/8)
-- MUST: Un attribut d'association nomme targetEntity en premier argument. Trigger: attribut #[ORM\ManyToOne], #[ORM\OneToMany], #[ORM\ManyToMany] ou #[ORM\OneToOne]. Anchor: targetEntity: X::class immédiatement après la parenthèse ouvrante. — coherence, non-blocking (10/10)
-- MUST: Un numéro de téléphone est typé par le VO Telephone et mappé avec le type Doctrine telephone. Trigger: propriété d'entité représentant un numéro de téléphone. Anchor: #[ORM\Column(type: 'telephone', length: 20)] au-dessus d'une propriété typée Telephone. (4/4)
-- MUST: Une transition de statut interdite lève une \LogicException depuis l'entité. Trigger: méthode d'entité qui fait changer une propriété de statut mappée par enumType. Anchor: garde sur le statut courant suivie de throw new \LogicException. (4/4)
+- MUST: An entity using SoftDeleteableTrait declares the Gedmo\SoftDeleteable attribute on deletedAt. Trigger: entity composed with SoftDeleteableTrait. Anchor: #[Gedmo\SoftDeleteable(fieldName: 'deletedAt', timeAware: false, hardDelete: false)] on the class. (3/3)
+- MUST: A mapped property readable from outside is declared public private(set), without a getter. Trigger: mapped property of an entity consumed outside the entity. Anchor: public private(set) modifier on the property declaration. (15/16)
+- MUST: An #[ORM\Embedded] explicitly sets its columnPrefix. Trigger: property mapped by #[ORM\Embedded]. Anchor: columnPrefix argument (false or a snake_case prefix) in the Embedded attribute. (4/4)
+- MUST: A ManyToOne association declares an #[ORM\JoinColumn] carrying its nullability. Trigger: property annotated #[ORM\ManyToOne]. Anchor: #[ORM\JoinColumn(nullable: ...)] on the next line. (8/8)
+- MUST: An association attribute names targetEntity as its first argument. Trigger: #[ORM\ManyToOne], #[ORM\OneToMany], #[ORM\ManyToMany] or #[ORM\OneToOne] attribute. Anchor: targetEntity: X::class right after the opening parenthesis. — coherence, non-blocking (10/10)
+- MUST: A phone number is typed by the Phone value object and mapped with the phone Doctrine type. Trigger: entity property holding a phone number. Anchor: #[ORM\Column(type: 'phone', length: 20)] above a property typed Phone. (4/4)
+- MUST: A forbidden status transition throws a \LogicException from the entity. Trigger: entity method changing a status property mapped by enumType. Anchor: guard on the current status followed by throw new \LogicException. (4/4)

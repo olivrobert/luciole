@@ -22,19 +22,19 @@ const EXPECTED = JSON.parse(readFileSync(join(EVALS, 'fixtures/expected.json'), 
 const USAGE = `
 node evals/run.mjs [options]
 
-Mesure le jugement sémantique de luciole sur les fixtures de evals/fixtures,
-contre expected.json, par taille de lot, modèle et moteur.
+Measures luciole's semantic judgment on evals/fixtures against expected.json,
+per lot size, model and engine.
 
-  --configs=<list>     haiku, sonnet, opus, agent:<model>, jev, jev:<model> (défaut : ${DEFAULT_CONFIGS})
-                       jev juge un fichier par requête : --sizes=1 suffit pour lui
-  --sizes=<list>       tailles de lot (défaut : 1,2,5,10)
-  --repeat=<n>         répétitions par cellule (défaut : 3)
-  --concurrency=<n>    lots évalués en parallèle (défaut : 4)
-  --dry-run            affiche le plan et le nombre d'appels, sans rien appeler
+  --configs=<list>     haiku, sonnet, opus, agent:<model>, jev, jev:<model> (default: ${DEFAULT_CONFIGS})
+                       jev judges one file per request: --sizes=1 is enough for it
+  --sizes=<list>       lot sizes (default: 1,2,5,10)
+  --repeat=<n>         runs per cell (default: 3)
+  --concurrency=<n>    lots evaluated in parallel (default: 4)
+  --dry-run            print the plan and the number of calls, call nothing
 
-Moteur agent : le prompt de luciole/agents/checker.md, via \`claude -p --model\`, un appel par
-groupe du matcher, comme le skill verify (sans inline). Moteur jev : constraint-check, qui lit
-TYPESAFE_API_KEY dans l'environnement ou dans le .env.local du dépôt luciole.
+Engine agent: the prompt of luciole/agents/checker.md through \`claude -p --model\`, one call per
+matcher group, as the verify skill dispatches them (no inline). Engine jev: constraint-check, which
+reads TYPESAFE_API_KEY from the environment or the luciole repo .env.local.
 `.trimStart()
 
 function parseArgs(argv) {
@@ -147,12 +147,12 @@ async function main() {
         const n = p.config.engine === 'agent' ? match(cwd, p.lot).agent_groups.length : p.lot.length
         calls.set(p.config.label, (calls.get(p.config.label) ?? 0) + n)
       }
-      process.stdout.write(`${EXPECTED.files.length} fichiers, ${expected.size} violations attendues, ${mustCells(all).size} cellules MUST\n`)
-      for (const [label, n] of calls) process.stdout.write(`${label} : ${n} appels\n`)
+      process.stdout.write(`${EXPECTED.files.length} files, ${expected.size} expected violations, ${mustCells(all).size} MUST cells\n`)
+      for (const [label, n] of calls) process.stdout.write(`${label}: ${n} calls\n`)
       return
     }
 
-    process.stderr.write(`${plan.length} lots à évaluer…\n`)
+    process.stderr.write(`${plan.length} lots to evaluate…\n`)
     const runs = await pool(plan.map((p) => async () => {
       const started = Date.now()
       const result = p.config.engine === 'agent' ? await evalAgent(cwd, p.lot, p.config) : await evalJev(cwd, p.lot, p.config)
@@ -168,18 +168,18 @@ async function main() {
     process.stderr.write('\n')
 
     const table = renderTable(summarize(runs))
-    const errors = runs.flatMap((r) => r.errors.map((e) => `- ${r.config} · lot ${r.size} · rep ${r.rep} : ${e}`))
+    const errors = runs.flatMap((r) => r.errors.map((e) => `- ${r.config} · lot of ${r.size} · run ${r.rep}: ${e}`))
     const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
     const resultsDir = join(EVALS, 'results')
     mkdirSync(resultsDir, { recursive: true })
     const report = [
-      `# Eval luciole · ${stamp}`, '', table, '',
-      '## Erreurs de jugement', '', renderMisses(runs), '',
-      ...(errors.length ? ['## Erreurs d\'exécution', '', ...errors, ''] : []),
+      `# Luciole eval · ${stamp}`, '', table, '',
+      '## Judgment errors', '', renderMisses(runs), '',
+      ...(errors.length ? ['## Run errors', '', ...errors, ''] : []),
     ].join('\n')
     writeFileSync(join(resultsDir, `${stamp}.md`), report)
     writeFileSync(join(resultsDir, `${stamp}.json`), JSON.stringify(runs, null, 2))
-    process.stdout.write(`${table}\n\nDétail : evals/results/${stamp}.md\n`)
+    process.stdout.write(`${table}\n\nDetails: evals/results/${stamp}.md\n`)
   } finally {
     rmSync(cwd, { recursive: true, force: true })
   }
