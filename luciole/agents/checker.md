@@ -2,7 +2,7 @@
 name: checker
 description: Pure text analysis agent for checking code against quality constraints. The caller provides constraint rules and file paths. This agent reads the files, then analyzes them against the rules.
 tools: Read
-model: sonnet
+model: haiku
 ---
 
 <role>
